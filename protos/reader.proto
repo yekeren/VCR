@@ -1,0 +1,26 @@
+syntax = "proto2";
+
+message Reader {
+  oneof reader_oneof {
+    VCRReader vcr_reader = 1;
+  }
+}
+
+message VCRReader {
+  // Pattern of the input files.
+  repeated string input_pattern = 1;
+
+  // Shuffle buffer size.
+  optional int32 shuffle_buffer_size = 2 [default = 1000];
+
+  // Cycle length of interleave call.
+  optional int32 interleave_cycle_length = 4 [default = 2];
+
+  // Batch size.
+  optional int32 batch_size = 5 [default = 32];
+
+  // Prefetch buffer size.
+  optional int32 prefetch_buffer_size = 6 [default = 200];
+}
+
+

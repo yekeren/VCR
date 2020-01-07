@@ -1,0 +1,91 @@
+syntax = "proto2";
+
+message Model {
+  extensions 1000 to max;
+}
+
+enum TextFeature {
+  ANSWER_ONLY = 0;
+  QUESTION_AND_ANSWER = 1;
+}
+
+message VCRBiLSTMFuse {
+  extend Model {
+    optional VCRBiLSTMFuse ext = 1000;
+  }
+  optional string vocab_file = 1;
+  optional uint32 vocab_size = 2;
+  optional uint32 unk_token_id = 3 [default = 100];
+  optional uint32 embedding_dims = 4 [default = 100];
+
+  optional string glove_file = 5;
+  optional uint32 lstm_units = 6 [default = 128];
+  optional float lstm_dropout = 7 [default = 0];
+  optional float lstm_recurrent_dropout = 8 [default = 0];
+
+  optional TextFeature text_feature = 9 [default = QUESTION_AND_ANSWER];
+}
+
+message VCRBiLSTMConcat {
+  extend Model {
+    optional VCRBiLSTMConcat ext = 1001;
+  }
+  optional string vocab_file = 1;
+  optional uint32 vocab_size = 2;
+  optional uint32 unk_token_id = 3 [default = 100];
+  optional uint32 embedding_dims = 4 [default = 100];
+
+  optional string glove_file = 5;
+  optional uint32 lstm_units = 6 [default = 128];
+  optional float lstm_dropout = 7 [default = 0];
+  optional float lstm_recurrent_dropout = 8 [default = 0];
+
+  optional TextFeature text_feature = 9 [default = QUESTION_AND_ANSWER];
+}
+
+message VCRBert {
+  extend Model {
+    optional VCRBert ext = 1002;
+  }
+
+  optional string bert_config_file = 1;
+  optional string bert_vocab_file = 2;
+  optional string bert_checkpoint_file = 3;
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  optional bool bert_finetune_all = 5 [default = false];
+  repeated string bert_finetune_layers = 6;
+}
+
+message VCRBiLSTMGloVe {
+  extend Model {
+    optional VCRBiLSTMGloVe ext = 1003;
+  }
+  optional string vocab_file = 1;
+  optional uint32 vocab_size = 2;
+  optional uint32 unk_token_id = 3 [default = 100];
+  optional uint32 embedding_dims = 4 [default = 100];
+
+  optional string glove_file = 5;
+  optional uint32 lstm_units = 6 [default = 128];
+  optional float lstm_dropout = 7 [default = 0];
+  optional float lstm_recurrent_dropout = 8 [default = 0];
+}
+
+message VCRBiLSTMBert {
+  extend Model {
+    optional VCRBiLSTMBert ext = 1004;
+  }
+  optional string bert_config_file = 1;
+  optional string bert_vocab_file = 2;
+  optional string bert_checkpoint_file = 3;
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  optional uint32 lstm_units = 5 [default = 128];
+  optional float lstm_dropout = 6 [default = 0];
+  optional float lstm_recurrent_dropout = 7 [default = 0];
+
+  optional bool bert_finetune_all = 8 [default = false];
+  repeated string bert_finetune_layers = 9;
+}
+

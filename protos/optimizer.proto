@@ -1,0 +1,28 @@
+syntax = "proto2";
+
+message Optimizer {
+  oneof optimizer {
+    AdagradOptimizer adagrad = 1;
+    RMSPropOptimizer rmsprop = 2;
+    AdamOptimizer adam = 3;
+  }
+}
+
+message AdagradOptimizer {
+  optional float initial_accumulator_value = 1 [default = 0.1];
+  optional float epsilon = 2 [default = 1e-07];
+}
+
+message RMSPropOptimizer {
+  optional float rho = 1 [default = 0.9];
+  optional float momentum = 2 [default = 0.0];
+  optional float epsilon = 3 [default = 1e-7];
+  optional bool centered = 4 [default = false];
+}
+
+message AdamOptimizer {
+  optional float beta_1 = 1 [default = 0.9];
+  optional float beta_2 = 2 [default = 0.999];
+  optional float epsilon = 3 [default = 1e-07];
+  optional bool amsgrad = 4 [default = false];
+}
