@@ -89,3 +89,17 @@ message VCRBiLSTMBert {
   repeated string bert_finetune_layers = 9;
 }
 
+message VCRVBert {
+  extend Model {
+    optional VCRVBert ext = 1005;
+  }
+
+  optional string bert_config_file = 1;
+  optional string bert_vocab_file = 2;
+  optional string bert_checkpoint_file = 3;
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  optional bool bert_finetune_all = 5 [default = false];
+  repeated string bert_finetune_layers = 6;
+}
+

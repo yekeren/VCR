@@ -28,7 +28,7 @@ class VCRBert(ModelBase):
     super(VCRBert, self).__init__(model_proto, is_training)
 
     if not isinstance(model_proto, model_pb2.VCRBert):
-      raise ValueError('Options has to an VCRBert proto.')
+      raise ValueError('Options has to be an VCRBert proto.')
 
   def predict(self, inputs, **kwargs):
     """Predicts the resulting tensors.

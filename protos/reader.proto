@@ -21,6 +21,9 @@ message VCRReader {
 
   // Prefetch buffer size.
   optional int32 prefetch_buffer_size = 6 [default = 200];
+
+  // If false, do not decode jpeg image.
+  optional bool decode_jpeg = 7 [default = false];
 }
 
 

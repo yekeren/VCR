@@ -13,9 +13,10 @@ import hashlib
 import io
 import zipfile
 import numpy as np
+import PIL.Image
 import tensorflow as tf
 
-from official.nlp.bert import tokenization
+from bert import tokenization
 
 flags.DEFINE_string('bert_vocab_file',
                     'data/bert/keras/cased_L-12_H-768_A-12/vocab.txt',
@@ -30,11 +31,13 @@ flags.DEFINE_string('annotations_jsonl_file', 'data/vcr1annots/val.jsonl',
 flags.DEFINE_integer('num_shards', 10,
                      'Number of shards of the output tfrecord files.')
 
-flags.DEFINE_string('output_tfrecord_path', 'output/val.record',
+flags.DEFINE_string('output_tfrecord_path', '/own_files/yekeren/VCR2/val.record',
                     'Path to the output tfrecord files.')
 
 flags.DEFINE_string('image_zip_file', 'data/vcr1images.zip',
                     'Path to the zip file of images.')
+
+flags.DEFINE_integer('image_max_size', 600, 'Maximum size of the image.')
 
 FLAGS = flags.FLAGS
 
@@ -92,13 +95,20 @@ def _fix_tokenization(tokenized_sent, obj_to_type, bert_tokenizer,
   return list(tokenized_sent), list(tags)
 
 
-def _create_tf_example(encoded_jpg, annot, meta, bert_tokenizer, do_lower_case):
+def _create_tf_example(encoded_jpg,
+                       annot,
+                       meta,
+                       bert_tokenizer,
+                       do_lower_case,
+                       image_max_size=None):
   """Creates an example from the annotation.
 
   Args:
     encoded_jpg: A python string, the encoded jpeg data.
     annot: A python dictionary parsed from the json object.
     bert_tokenizer: A tokenization.FullTokenizer object.
+    do_lower_case: If true, convert text to lower case.
+    image_max_size: If set, resize the larger size to this value.
 
   Returns:
     tf_example: A tf.train.Example proto.
@@ -133,6 +143,22 @@ def _create_tf_example(encoded_jpg, annot, meta, bert_tokenizer, do_lower_case):
 
   # Encode jpg data.
   image_height, image_width = meta['height'], meta['width']
+
+  if image_max_size is not None:
+    image = PIL.Image.open(io.BytesIO(encoded_jpg))
+    assert (image.height == image_height and image.width == image_width and
+            image.format == 'JPEG')
+
+    image_scale = image_max_size / max(image_height, image_width)
+
+    image_height, image_width = (int(image_height * image_scale),
+                                 int(image_width * image_scale))
+
+    image = image.resize((image_width, image_height))
+    with io.BytesIO() as output:
+      image.save(output, format="JPEG")
+      encoded_jpg = output.getvalue()
+
   feature['image/height'] = _int64_feature(image_height)
   feature['image/width'] = _int64_feature(image_width)
   feature['image/format'] = _bytes_feature('jpeg')
@@ -233,7 +259,7 @@ def main(_):
 
       # Create TF example.
       tf_example = _create_tf_example(encoded_jpg, annot, meta, bert_tokenizer,
-                                      FLAGS.do_lower_case)
+                                      FLAGS.do_lower_case, FLAGS.image_max_size)
       annot_id = int(annot['annot_id'].split('-')[-1])
       writers[annot_id % num_shards].write(tf_example.SerializeToString())
 

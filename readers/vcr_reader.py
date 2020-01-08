@@ -6,6 +6,7 @@ import os
 import json
 import tensorflow as tf
 
+from tf_slim import tfexample_decoder
 from protos import reader_pb2
 
 PAD = '[PAD]'
@@ -16,104 +17,108 @@ class TFExampleFields(object):
   """Fields in the tf.train.Example."""
   img_id = 'img_id'
   annot_id = 'annot_id'
-  question = 'question'
   answer_label = 'answer_label'
-  answer_choices = [
-      'answer_choice_1', 'answer_choice_2', 'answer_choice_3', 'answer_choice_4'
-  ]
+
   img_encoded = 'image/encoded'
+  img_format = 'image/format'
+  img_bbox_scope = "image/object/bbox/"
+  img_bbox_keys = ['ymin', 'xmin', 'ymax', 'xmax']
+  img_bbox_label = "image/object/bbox/label"
+  img_bbox_score = "image/object/bbox/score"
+
+  question = 'question'
+  answer_choice_1 = 'answer_choice_1'
+  answer_choice_2 = 'answer_choice_2'
+  answer_choice_3 = 'answer_choice_3'
+  answer_choice_4 = 'answer_choice_4'
+  answer_choices = [
+      answer_choice_1, answer_choice_2, answer_choice_3, answer_choice_4
+  ]
 
 
 class InputFields(object):
   """Names of the input tensors."""
+  # Meta information.
   img_id = 'img_id'
+  annot_id = 'annot_id'
+  answer_label = 'answer_label'
+
+  # Image data.
   img_data = 'img_data'
   img_height = 'img_height'
   img_width = 'img_width'
 
-  annot_id = 'annot_id'
+  # Objects.
+  num_objects = 'num_objects'
+  object_bboxes = 'object_bboxes'
+  object_labels = 'object_labels'
+  object_scores = 'object_scores'
+
+  # Question and answer choices.
   question = 'question'
   question_len = 'question_len'
-  answer_label = 'answer_label'
   answer_choices = 'answer_choices'
   answer_choices_len = 'answer_choices_len'
   answer_choices_with_question = 'answer_choices_with_question'
   answer_choices_with_question_len = 'answer_choices_with_question_len'
 
 
-def _parse_single_example(example):
-  """Parses a single tf.Example proto.
+def _pad_sentences(sentences):
+  """Pads sentences to the max-length.
 
   Args:
-    example: An Example proto.
+    sentences: A list of 1-D string tensor of size num_sentences, each elem in
+      the 1-D tensor denotes a sentence.
 
   Returns:
-    A dictionary indexed by tensor name.
+    padded_sentences: A [num_sentences, max_sentence_len] string tensor.
+    lengths: A [num_sentences] int tensor.
   """
-  features = {
-      TFExampleFields.img_id: tf.io.FixedLenFeature([], tf.string),
-      TFExampleFields.img_encoded: tf.io.FixedLenFeature([], tf.string),
-      TFExampleFields.annot_id: tf.io.FixedLenFeature([], tf.string),
-      TFExampleFields.question: tf.io.VarLenFeature(tf.string),
-      TFExampleFields.answer_label: tf.io.FixedLenFeature([], tf.int64),
-  }
-  for field in TFExampleFields.answer_choices:
-    features[field] = tf.io.VarLenFeature(tf.string)
-  parsed = tf.io.parse_single_example(example, features)
+  lengths = [tf.shape(x)[0] for x in sentences]
+  padded_size = tf.reduce_max(lengths)
+  padded_sentences = tf.stack([
+      tf.pad(x,
+             paddings=[[0, padded_size - lengths[i]]],
+             mode='CONSTANT',
+             constant_values=PAD) for i, x in enumerate(sentences)
+  ])
+  return padded_sentences, lengths
 
-  # Parse image.
-  image = tf.image.decode_jpeg(parsed[TFExampleFields.img_encoded], channels=3)
-  image_shape = tf.shape(image)
-  image_height, image_width = image_shape[0], image_shape[1]
 
-  # Parse question.
-  question = tf.sparse.to_dense(parsed[TFExampleFields.question],
-                                default_value=PAD)
+def _update_decoded_example(decoded_example):
+  """Updates the decoded example, add size to the varlen feature.
+
+  Args:
+    decoded_example: A tensor dictionary keyed by name.
+
+  Returns:
+    decoded_example: The same instance with content modified.
+  """
+  # Number of objects.
+  object_bboxes = decoded_example[InputFields.object_bboxes]
+  num_objects = tf.shape(object_bboxes)[0]
+
+  # Question length.
+  question = decoded_example[InputFields.question]
   question_len = tf.shape(question)[0]
 
-  # Parse answer choices.
-  def _pad_answer_choices(answer_choices):
-    answer_choices_len = [tf.shape(x)[0] for x in answer_choices]
-    padded_size = tf.reduce_max(answer_choices_len)
-    answer_choices = tf.stack([
-        tf.pad(x,
-               paddings=[[0, padded_size - answer_choices_len[i]]],
-               mode='CONSTANT',
-               constant_values=PAD) for i, x in enumerate(answer_choices)
-    ])
-    return answer_choices, answer_choices_len
-
+  # Answer choices and lengths.
   answer_choices_list = [
-      tf.sparse.to_dense(parsed[field], default_value=PAD)
-      for field in TFExampleFields.answer_choices
+      decoded_example.pop(field) for field in TFExampleFields.answer_choices
   ]
   answer_choices_with_question_list = [
       tf.concat([['[CLS]'], question, ['[SEP]'], x, ['[SEP]']], 0)
       for x in answer_choices_list
   ]
-
-  (answer_choices,
-   answer_choices_len) = _pad_answer_choices(answer_choices_list)
+  (answer_choices, answer_choices_len) = _pad_sentences(answer_choices_list)
   (answer_choices_with_question, answer_choices_with_question_len
-  ) = _pad_answer_choices(answer_choices_with_question_list)
+  ) = _pad_sentences(answer_choices_with_question_list)
 
-  return {
-      InputFields.img_id:
-          parsed[TFExampleFields.img_id],
-      InputFields.img_data:
-          image,
-      InputFields.img_height:
-          image_height,
-      InputFields.img_width:
-          image_width,
-      InputFields.annot_id:
-          parsed[TFExampleFields.annot_id],
-      InputFields.question:
-          question,
+  decoded_example.update({
+      InputFields.num_objects:
+          num_objects,
       InputFields.question_len:
           question_len,
-      InputFields.answer_label:
-          tf.dtypes.cast(parsed[TFExampleFields.answer_label], tf.int32),
       InputFields.answer_choices:
           answer_choices,
       InputFields.answer_choices_len:
@@ -122,7 +127,94 @@ def _parse_single_example(example):
           answer_choices_with_question,
       InputFields.answer_choices_with_question_len:
           answer_choices_with_question_len,
+  })
+
+  # Image shape.
+  if InputFields.img_data in decoded_example:
+    image = decoded_example[InputFields.img_data]
+    image_shape = tf.shape(image)
+    height, width = image_shape[0], image_shape[1]
+    decoded_example.update({
+        InputFields.img_height: height,
+        InputFields.img_width: width,
+    })
+
+  return decoded_example
+
+
+def _parse_single_example(example, decode_jpeg=False):
+  """Parses a single tf.Example proto.
+
+  Args:
+    example: An Example proto.
+    decode_jpeg: If true, decode the jpeg image.
+
+  Returns:
+    A dictionary indexed by tensor name.
+  """
+  # Initialize `keys_to_features`.
+  keys_to_features = {
+      TFExampleFields.img_id: tf.io.FixedLenFeature([], tf.string),
+      TFExampleFields.annot_id: tf.io.FixedLenFeature([], tf.string),
+      TFExampleFields.answer_label: tf.io.FixedLenFeature([], tf.int64),
+      TFExampleFields.img_encoded: tf.io.FixedLenFeature([], tf.string),
+      TFExampleFields.img_format: tf.io.FixedLenFeature([], tf.string),
+      TFExampleFields.img_bbox_label: tf.io.VarLenFeature(tf.string),
+      TFExampleFields.img_bbox_score: tf.io.VarLenFeature(tf.float32),
+      TFExampleFields.question: tf.io.VarLenFeature(tf.string),
   }
+  for bbox_key in TFExampleFields.img_bbox_keys:
+    field = os.path.join(TFExampleFields.img_bbox_scope, bbox_key)
+    keys_to_features[field] = tf.io.VarLenFeature(tf.float32)
+  for field in TFExampleFields.answer_choices:
+    keys_to_features[field] = tf.io.VarLenFeature(tf.string)
+
+  # Initialize `items_to_handlers`.
+  items_to_handlers = {
+      InputFields.img_id:
+          tfexample_decoder.Tensor(tensor_key=TFExampleFields.img_id,
+                                   default_value=''),
+      InputFields.annot_id:
+          tfexample_decoder.Tensor(tensor_key=TFExampleFields.annot_id,
+                                   default_value=''),
+      InputFields.answer_label:
+          tfexample_decoder.Tensor(tensor_key=TFExampleFields.answer_label,
+                                   default_value=-1),
+      InputFields.img_data:
+          tfexample_decoder.Image(image_key=TFExampleFields.img_encoded,
+                                  format_key=TFExampleFields.img_format,
+                                  shape=None),
+      InputFields.object_bboxes:
+          tfexample_decoder.BoundingBox(keys=TFExampleFields.img_bbox_keys,
+                                        prefix=TFExampleFields.img_bbox_scope),
+      InputFields.object_labels:
+          tfexample_decoder.Tensor(tensor_key=TFExampleFields.img_bbox_label,
+                                   default_value=''),
+      InputFields.object_scores:
+          tfexample_decoder.Tensor(tensor_key=TFExampleFields.img_bbox_score,
+                                   default_value=0),
+      InputFields.question:
+          tfexample_decoder.Tensor(tensor_key=TFExampleFields.question,
+                                   default_value=PAD),
+  }
+  if not decode_jpeg:
+    items_to_handlers.pop(InputFields.img_data)
+
+  for field in TFExampleFields.answer_choices:
+    items_to_handlers[field] = tfexample_decoder.Tensor(tensor_key=field,
+                                                        default_value=PAD)
+
+  # Decode example.
+  example_decoder = tfexample_decoder.TFExampleDecoder(keys_to_features,
+                                                       items_to_handlers)
+
+  output_keys = example_decoder.list_items()
+  output_tensors = example_decoder.decode(example)
+  output_tensors = [
+      x if x.dtype != tf.int64 else tf.cast(x, tf.int32) for x in output_tensors
+  ]
+  decoded_example = dict(zip(output_keys, output_tensors))
+  return _update_decoded_example(decoded_example)
 
 
 def _create_dataset(options, is_training, input_pipeline_context=None):
@@ -153,18 +245,21 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
   dataset = dataset.interleave(tf.data.TFRecordDataset,
                                cycle_length=options.interleave_cycle_length,
                                num_parallel_calls=tf.data.experimental.AUTOTUNE)
-  dataset = dataset.map(map_func=_parse_single_example,
+
+  parse_fn = lambda x: _parse_single_example(x, options.decode_jpeg)
+  dataset = dataset.map(map_func=parse_fn,
                         num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
   padded_shapes = {
       InputFields.img_id: [],
-      InputFields.img_data: [None, None, 3],
-      InputFields.img_height: [],
-      InputFields.img_width: [],
       InputFields.annot_id: [],
+      InputFields.answer_label: [],
+      InputFields.num_objects: [],
+      InputFields.object_bboxes: [None, 4],
+      InputFields.object_labels: [None],
+      InputFields.object_scores: [None],
       InputFields.question: [None],
       InputFields.question_len: [],
-      InputFields.answer_label: [],
       InputFields.answer_choices: [NUM_CHOICES, None],
       InputFields.answer_choices_len: [NUM_CHOICES],
       InputFields.answer_choices_with_question: [NUM_CHOICES, None],
@@ -172,18 +267,30 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
   }
   padding_values = {
       InputFields.img_id: '',
-      InputFields.img_data: tf.constant(0, dtype=tf.uint8),
-      InputFields.img_height: 0,
-      InputFields.img_width: 0,
       InputFields.annot_id: '',
+      InputFields.answer_label: -1,
+      InputFields.num_objects: 0,
+      InputFields.object_bboxes: 0.0,
+      InputFields.object_labels: '',
+      InputFields.object_scores: 0.0,
       InputFields.question: PAD,
       InputFields.question_len: 0,
-      InputFields.answer_label: -1,
       InputFields.answer_choices: PAD,
       InputFields.answer_choices_len: 0,
       InputFields.answer_choices_with_question: PAD,
       InputFields.answer_choices_with_question_len: 0,
   }
+  if options.decode_jpeg:
+    padded_shapes.update({
+        InputFields.img_data: [None, None, 3],
+        InputFields.img_height: [],
+        InputFields.img_width: [],
+    })
+    padding_values.update({
+        InputFields.img_data: tf.constant(0, dtype=tf.uint8),
+        InputFields.img_height: 0,
+        InputFields.img_width: 0,
+    })
   dataset = dataset.padded_batch(batch_size,
                                  padded_shapes=padded_shapes,
                                  padding_values=padding_values,
