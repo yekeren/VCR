@@ -4,6 +4,7 @@ set -o errexit
 set -o nounset
 set -x
 
+python "modeling/utils/masked_ops_test.py"
 python "modeling/utils/learning_rate_schedule_test.py"
 python "modeling/utils/optimization_test.py"
 python "modeling/layers/token_to_id_test.py"
