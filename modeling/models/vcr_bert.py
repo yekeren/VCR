@@ -15,8 +15,9 @@ from modeling.models.model_base import ModelBase
 from readers.vcr_reader import InputFields
 from readers.vcr_reader import NUM_CHOICES
 
-from official.nlp.bert_modeling import BertConfig
-from official.nlp.bert_models import _get_transformer_encoder as get_transformer_encoder
+from bert.modeling import BertConfig
+from bert.modeling import BertModel
+from bert.modeling import get_assignment_map_from_checkpoint
 
 FIELD_ANSWER_PREDICTION = 'answer_prediction'
 
@@ -51,40 +52,39 @@ class VCRBert(ModelBase):
     token_to_id_layer = token_to_id.TokenToIdLayer(options.bert_vocab_file,
                                                    options.bert_unk_token_id)
 
-    bert_config = BertConfig.from_json_file(options.bert_config_file)
-    self.transformer_encoder = get_transformer_encoder(bert_config, None)
-
-    checkpoint = tf.train.Checkpoint(model=self.transformer_encoder)
-    self.transformer_encoder_load_status = checkpoint.restore(
-        options.bert_checkpoint_file)
-
-    var = self.transformer_encoder.trainable_variables[-1]
-    tf.compat.v1.summary.histogram('biases/' + var.op.name, var)
-
-    logit_layer = tf.keras.layers.Dense(1, activation=None)
-
     # Convert tokens into token ids.
     batch_size = answer_choices.shape[0]
-    answer_choices_token_ids = token_to_id_layer(answer_choices)
 
-    # Answer choices' next_sentence prediction feature.
+    answer_choices_token_ids = token_to_id_layer(answer_choices)
+    answer_choices_token_ids_reshaped = tf.reshape(
+        answer_choices_token_ids, [batch_size * NUM_CHOICES, -1])
+
     answer_choices_mask = tf.sequence_mask(answer_choices_len,
                                            maxlen=tf.shape(answer_choices)[-1])
     answer_choices_mask_reshaped = tf.reshape(answer_choices_mask,
                                               [batch_size * NUM_CHOICES, -1])
-    answer_choices_token_ids_reshaped = tf.reshape(
-        answer_choices_token_ids, [batch_size * NUM_CHOICES, -1])
-    _, answer_choices_cls_feature_reshaped = self.transformer_encoder(
-        [
-            answer_choices_token_ids_reshaped, answer_choices_mask_reshaped,
-            tf.zeros_like(answer_choices_token_ids_reshaped, dtype=tf.int32)
-        ],
-        training=is_training)
 
+    # Bert prediction.
+    bert_config = BertConfig.from_json_file(options.bert_config_file)
+    bert_model = BertModel(bert_config,
+                           is_training,
+                           input_ids=answer_choices_token_ids_reshaped,
+                           input_mask=answer_choices_mask_reshaped)
+
+    answer_choices_cls_feature_reshaped = bert_model.get_pooled_output()
     answer_choices_cls_feature = tf.reshape(answer_choices_cls_feature_reshaped,
                                             [batch_size, NUM_CHOICES, -1])
 
-    output = logit_layer(answer_choices_cls_feature)
+    assignment_map, _ = get_assignment_map_from_checkpoint(
+        tf.global_variables(), options.bert_checkpoint_file)
+
+    tf.compat.v1.train.init_from_checkpoint(options.bert_checkpoint_file,
+                                            assignment_map)
+
+    # Classification layer.
+    output = tf.compat.v1.layers.dense(answer_choices_cls_feature,
+                                       units=1,
+                                       activation=None)
     output = tf.squeeze(output, axis=-1)
 
     return {FIELD_ANSWER_PREDICTION: output}
@@ -123,19 +123,6 @@ class VCRBert(ModelBase):
     accuracy_metric.update_state(y_true, y_pred)
     return {'metrics/accuracy': accuracy_metric}
 
-  def get_scaffold(self):
-    """Returns a scaffold object used to initialize variables.
-
-    Returns:
-      A tf.train.Scaffold instance.
-    """
-
-    def _init_fn(scaffold, sess):
-      self.transformer_encoder_load_status.initialize_or_restore(sess)
-
-    scaffold = tf.compat.v1.train.Scaffold(init_fn=_init_fn)
-    return scaffold
-
   def get_variables_to_train(self):
     """Returns model variables.
       
@@ -146,7 +133,9 @@ class VCRBert(ModelBase):
 
     bert_frozen_variables = []
     if not options.bert_finetune_all:
-      bert_frozen_variables = self.transformer_encoder.trainable_variables
+      bert_frozen_variables = [
+          x for x in tf.compat.v1.trainable_variables() if 'bert' in x.op.name
+      ]
       for layer_name in options.bert_finetune_layers:
         bert_frozen_variables = [
             x for x in bert_frozen_variables if layer_name not in x.op.name
