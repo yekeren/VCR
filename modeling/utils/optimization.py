@@ -26,30 +26,24 @@ def create_optimizer(options, learning_rate=0.1):
     raise ValueError('The options has to be an instance of Optimizer.')
 
   optimizer = options.WhichOneof('optimizer')
+  options = getattr(options, optimizer)
 
   if 'adagrad' == optimizer:
-    options = options.adagrad
-    return tf.keras.optimizers.Adagrad(
+    return tf.compat.v1.train.AdagradOptimizer(
         learning_rate,
-        initial_accumulator_value=options.initial_accumulator_value,
-        epsilon=options.epsilon)
+        initial_accumulator_value=options.initial_accumulator_value)
 
   if 'rmsprop' == optimizer:
-    options = options.rmsprop
-    return tf.keras.optimizers.RMSprop(
-        learning_rate,
-        rho=options.rho,
-        momentum=options.momentum,
-        epsilon=options.epsilon,
-        centered=options.centered)
+    return tf.compat.v1.train.RMSPropOptimizer(learning_rate,
+                                               decay=options.decay,
+                                               momentum=options.momentum,
+                                               epsilon=options.epsilon,
+                                               centered=options.centered)
 
   if 'adam' == optimizer:
-    options = options.adam
-    return tf.keras.optimizers.Adam(
-        learning_rate,
-        beta_1=options.beta_1,
-        beta_2=options.beta_2,
-        epsilon=options.epsilon,
-        amsgrad=options.amsgrad)
+    return tf.compat.v1.train.AdamOptimizer(learning_rate,
+                                            beta1=options.beta1,
+                                            beta2=options.beta2,
+                                            epsilon=options.epsilon)
 
   raise ValueError('Invalid optimizer: {}.'.format(optimizer))

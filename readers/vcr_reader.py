@@ -157,8 +157,6 @@ def _parse_single_example(example, decode_jpeg=False):
       TFExampleFields.img_id: tf.io.FixedLenFeature([], tf.string),
       TFExampleFields.annot_id: tf.io.FixedLenFeature([], tf.string),
       TFExampleFields.answer_label: tf.io.FixedLenFeature([], tf.int64),
-      TFExampleFields.img_encoded: tf.io.FixedLenFeature([], tf.string),
-      TFExampleFields.img_format: tf.io.FixedLenFeature([], tf.string),
       TFExampleFields.img_bbox_label: tf.io.VarLenFeature(tf.string),
       TFExampleFields.img_bbox_score: tf.io.VarLenFeature(tf.float32),
       TFExampleFields.question: tf.io.VarLenFeature(tf.string),
@@ -180,10 +178,6 @@ def _parse_single_example(example, decode_jpeg=False):
       InputFields.answer_label:
           tfexample_decoder.Tensor(tensor_key=TFExampleFields.answer_label,
                                    default_value=-1),
-      InputFields.img_data:
-          tfexample_decoder.Image(image_key=TFExampleFields.img_encoded,
-                                  format_key=TFExampleFields.img_format,
-                                  shape=None),
       InputFields.object_bboxes:
           tfexample_decoder.BoundingBox(keys=TFExampleFields.img_bbox_keys,
                                         prefix=TFExampleFields.img_bbox_scope),
@@ -197,8 +191,17 @@ def _parse_single_example(example, decode_jpeg=False):
           tfexample_decoder.Tensor(tensor_key=TFExampleFields.question,
                                    default_value=PAD),
   }
-  if not decode_jpeg:
-    items_to_handlers.pop(InputFields.img_data)
+  if decode_jpeg:
+    keys_to_features.update({
+        TFExampleFields.img_encoded: tf.io.FixedLenFeature([], tf.string),
+        TFExampleFields.img_format: tf.io.FixedLenFeature([], tf.string),
+    })
+    items_to_handlers.update({
+        InputFields.img_data:
+            tfexample_decoder.Image(image_key=TFExampleFields.img_encoded,
+                                    format_key=TFExampleFields.img_format,
+                                    shape=None)
+    })
 
   for field in TFExampleFields.answer_choices:
     items_to_handlers[field] = tfexample_decoder.Tensor(tensor_key=field,
@@ -240,15 +243,16 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
         options.batch_size)
 
   if is_training:
+    if options.cache_dataset:
+      dataset = dataset.cache()
     dataset = dataset.repeat()
     dataset = dataset.shuffle(options.shuffle_buffer_size)
   dataset = dataset.interleave(tf.data.TFRecordDataset,
-                               cycle_length=options.interleave_cycle_length,
-                               num_parallel_calls=tf.data.experimental.AUTOTUNE)
+                               cycle_length=options.interleave_cycle_length)
 
   parse_fn = lambda x: _parse_single_example(x, options.decode_jpeg)
   dataset = dataset.map(map_func=parse_fn,
-                        num_parallel_calls=tf.data.experimental.AUTOTUNE)
+                        num_parallel_calls=options.num_parallel_calls)
 
   padded_shapes = {
       InputFields.img_id: [],

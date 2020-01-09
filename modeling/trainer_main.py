@@ -35,7 +35,8 @@ def _load_pipeline_proto(filename):
 
 
 def main(_):
-  logging.set_verbosity(logging.DEBUG)
+  logging.set_verbosity(logging.INFO)
+
   for gpu in tf.config.experimental.list_physical_devices('GPU'):
     tf.config.experimental.set_memory_growth(gpu, True)
 

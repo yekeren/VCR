@@ -20,7 +20,7 @@ class VCRReaderTest(tf.test.TestCase):
   def test_get_input_fn(self):
     options_str = r"""
       vcr_reader {
-        input_pattern: "output/val.record-00000-of-00010"
+        input_pattern: "output/val.record-00000-of-00005"
         shuffle_buffer_size: 10
         interleave_cycle_length: 1
         batch_size: 20
@@ -43,7 +43,7 @@ class VCRReaderTest(tf.test.TestCase):
   def test_get_input_fn_no_image(self):
     options_str = r"""
       vcr_reader {
-        input_pattern: "output/val.record-00000-of-00010"
+        input_pattern: "output/val.record-00000-of-00005"
         shuffle_buffer_size: 10
         interleave_cycle_length: 1
         batch_size: 20

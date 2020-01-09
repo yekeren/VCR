@@ -62,21 +62,19 @@ def _create_model_fn(pipeline_proto, is_chief=True):
 
     model = builder.build(pipeline_proto.model, is_training)
 
-    # Use gradient tape to track variable gradients.
-    with tf.GradientTape() as tape:
-      # Predict resutls.
-      predictions = model.predict(features)
+    # Predict resutls.
+    predictions = model.predict(features)
 
-      # Compute losses. Note: variables created in build_loss are not trainable.
-      total_loss = 0
-      losses = model.build_losses(features, predictions)
-      for name, loss in losses.items():
-        tf.compat.v1.summary.scalar('metrics/' + name, loss)
-        total_loss += loss
+    # Compute losses. Note: variables created in build_loss are not trainable.
+    total_loss = 0
+    losses = model.build_losses(features, predictions)
+    for name, loss in losses.items():
+      tf.compat.v1.summary.scalar('metrics/' + name, loss)
+      total_loss += loss
 
-      # Get variables_to_train.
-      variables_to_train = model.get_variables_to_train()
-      scaffold = model.get_scaffold()
+    # Get variables_to_train.
+    variables_to_train = model.get_variables_to_train()
+    scaffold = model.get_scaffold()
 
     train_op = None
     eval_metric_ops = None
@@ -86,19 +84,19 @@ def _create_model_fn(pipeline_proto, is_chief=True):
 
       # Set learning rate.
       train_config = pipeline_proto.train_config
-      lr_schedule = learning_rate_schedule.create_learning_rate_schedule(
+      lr_schedule_fn = learning_rate_schedule.create_learning_rate_schedule(
           train_config.learning_rate_schedule)
-      tf.compat.v1.summary.scalar('metrics/learning_rate',
-                                  lr_schedule(global_step))
+      learning_rate = lr_schedule_fn(global_step)
+      tf.compat.v1.summary.scalar('metrics/learning_rate', learning_rate)
 
       # Use optimizer to minimize loss.
       optimizer = optimization.create_optimizer(train_config.optimizer,
-                                                learning_rate=lr_schedule)
-      gradients = tape.gradient(total_loss, variables_to_train)
-      add_gradients_summaries(zip(gradients, variables_to_train))
+                                                learning_rate=learning_rate)
+      grad_and_vars = optimizer.compute_gradients(total_loss,
+                                                  variables_to_train)
+      add_gradients_summaries(grad_and_vars)
 
-      train_op = optimizer.apply_gradients(zip(gradients, variables_to_train))
-      train_op = tf.group(train_op, global_step.assign_add(1).op)
+      train_op = optimizer.apply_gradients(grad_and_vars, global_step)
 
     elif tf.estimator.ModeKeys.EVAL == mode:
 

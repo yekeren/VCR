@@ -16,14 +16,20 @@ message VCRReader {
   // Cycle length of interleave call.
   optional int32 interleave_cycle_length = 4 [default = 2];
 
+  // Number of parallel calls.
+  optional int32 num_parallel_calls = 5 [default = 5];
+
   // Batch size.
-  optional int32 batch_size = 5 [default = 32];
+  optional int32 batch_size = 6 [default = 32];
 
   // Prefetch buffer size.
-  optional int32 prefetch_buffer_size = 6 [default = 200];
+  optional int32 prefetch_buffer_size = 7 [default = 200];
 
   // If false, do not decode jpeg image.
-  optional bool decode_jpeg = 7 [default = false];
+  optional bool decode_jpeg = 8 [default = false];
+
+  // If true, cache dataset in the memory.
+  optional bool cache_dataset = 9 [default = false];
 }
 
 

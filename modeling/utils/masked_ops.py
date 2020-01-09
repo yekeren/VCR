@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+_EPSILON = 1e-10
 _INF = 1e10
 
 
@@ -103,8 +104,9 @@ def masked_avg(data, mask, dim=1):
       The averaged dimension is of size 1 after the operation.
   """
   masked_sums = masked_sum(data, mask, dim)
-  masked_avgs = tf.div(masked_sums,
-                       tf.maximum(1, tf.reduce_sum(mask, dim, keepdims=True)))
+  masked_avgs = tf.div(
+      masked_sums, tf.maximum(_EPSILON, tf.reduce_sum(mask, dim,
+                                                      keepdims=True)))
   return masked_avgs
 
 
@@ -141,7 +143,8 @@ def masked_avg_nd(data, mask, dim=1):
   masked_avgs = tf.div(
       masked_sums,
       tf.maximum(
-          1, tf.expand_dims(tf.reduce_sum(mask, dim, keepdims=True), axis=-1)))
+          _EPSILON,
+          tf.expand_dims(tf.reduce_sum(mask, dim, keepdims=True), axis=-1)))
   return masked_avgs
 
 
@@ -156,5 +159,5 @@ def masked_softmax(data, mask, dim=-1):
   Returns:
     masked_softmax: 2-D float `Tensor` of size [n, m].
   """
-  mask = _INF * (1.0 - tf.convert_to_tensor(mask, dtype=tf.float32))
+  mask = _INF * (1.0 - mask)
   return tf.nn.softmax(data - mask, axis=dim)

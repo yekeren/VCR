@@ -31,14 +31,19 @@ flags.DEFINE_string('annotations_jsonl_file', 'data/vcr1annots/val.jsonl',
 flags.DEFINE_integer('num_shards', 10,
                      'Number of shards of the output tfrecord files.')
 
-flags.DEFINE_string('output_tfrecord_path', '/own_files/yekeren/VCR2/val.record',
+flags.DEFINE_integer('shard_id', 0, 'Shard id of the current process.')
+
+flags.DEFINE_string('output_tfrecord_path',
+                    '/own_files/yekeren/VCR2/val.record',
                     'Path to the output tfrecord files.')
 
 flags.DEFINE_string('image_zip_file', 'data/vcr1images.zip',
                     'Path to the zip file of images.')
 
-flags.DEFINE_integer('image_max_size', 600, 'Maximum size of the image.')
+flags.DEFINE_integer('image_max_size', 400, 'Maximum size of the image.')
 
+flags.DEFINE_boolean('encode_jpeg', True,
+                     'If true, add jpeg encoded image to the tf example.')
 FLAGS = flags.FLAGS
 
 # GENDER_NEUTRAL_NAMES = [
@@ -95,12 +100,8 @@ def _fix_tokenization(tokenized_sent, obj_to_type, bert_tokenizer,
   return list(tokenized_sent), list(tags)
 
 
-def _create_tf_example(encoded_jpg,
-                       annot,
-                       meta,
-                       bert_tokenizer,
-                       do_lower_case,
-                       image_max_size=None):
+def _create_tf_example(encoded_jpg, annot, meta, bert_tokenizer, do_lower_case,
+                       image_max_size):
   """Creates an example from the annotation.
 
   Args:
@@ -108,7 +109,7 @@ def _create_tf_example(encoded_jpg,
     annot: A python dictionary parsed from the json object.
     bert_tokenizer: A tokenization.FullTokenizer object.
     do_lower_case: If true, convert text to lower case.
-    image_max_size: If set, resize the larger size to this value.
+    image_max_size: Resize the smaller size to this value.
 
   Returns:
     tf_example: A tf.train.Example proto.
@@ -141,35 +142,12 @@ def _create_tf_example(encoded_jpg,
     elif isinstance(value, str):
       feature[key] = _bytes_feature(value)
 
-  # Encode jpg data.
-  image_height, image_width = meta['height'], meta['width']
-
-  if image_max_size is not None:
-    image = PIL.Image.open(io.BytesIO(encoded_jpg))
-    assert (image.height == image_height and image.width == image_width and
-            image.format == 'JPEG')
-
-    image_scale = image_max_size / max(image_height, image_width)
-
-    image_height, image_width = (int(image_height * image_scale),
-                                 int(image_width * image_scale))
-
-    image = image.resize((image_width, image_height))
-    with io.BytesIO() as output:
-      image.save(output, format="JPEG")
-      encoded_jpg = output.getvalue()
-
-  feature['image/height'] = _int64_feature(image_height)
-  feature['image/width'] = _int64_feature(image_width)
-  feature['image/format'] = _bytes_feature('jpeg')
-  feature['image/encoded'] = tf.train.Feature(bytes_list=tf.train.BytesList(
-      value=[encoded_jpg]))
-
   # Encode objects and boxes.
-  assert meta['names'] == annot[
-      'objects'], 'Meta data does not match the annotation.'
-  obj_to_type = annot['objects']
+  image_height, image_width = meta['height'], meta['width']
+  assert (meta['names'] == annot['objects']
+         ), 'Meta data does not match the annotation.'
 
+  obj_to_type = annot['objects']
   boxes = np.array(meta['boxes'])
   xmin, ymin, xmax, ymax, score = [boxes[:, i] for i in range(5)]
 
@@ -183,6 +161,27 @@ def _create_tf_example(encoded_jpg,
   feature['image/object/bbox/ymax'] = _float_feature_list(ymax.tolist())
   feature['image/object/bbox/score'] = _float_feature_list(score.tolist())
   feature['image/object/bbox/label'] = _bytes_feature_list(obj_to_type)
+
+  # Encode jpg data, resize image if specified.
+  if encoded_jpg is not None:
+    if image_max_size is not None:
+      image = PIL.Image.open(io.BytesIO(encoded_jpg))
+      assert image.format == 'JPEG'
+
+      image_scale = image_max_size / min(image.height, image.width)
+      image_height, image_width = (int(image.height * image_scale),
+                                   int(image.width * image_scale))
+
+      image = image.resize((image_width, image_height))
+      with io.BytesIO() as output:
+        image.save(output, format="JPEG")
+        encoded_jpg = output.getvalue()
+
+    feature['image/height'] = _int64_feature(image_height)
+    feature['image/width'] = _int64_feature(image_width)
+    feature['image/format'] = _bytes_feature('jpeg')
+    feature['image/encoded'] = tf.train.Feature(bytes_list=tf.train.BytesList(
+        value=[encoded_jpg]))
 
   # Encode question and answer choices.
   question = annot['question']
@@ -227,25 +226,19 @@ def main(_):
   annots = _load_annotations(FLAGS.annotations_jsonl_file)
   logging.info('Loaded %i annotations.', len(annots))
 
-  num_shards = FLAGS.num_shards
-  output_tfrecord_path = FLAGS.output_tfrecord_path
-  writers = [
-      tf.io.TFRecordWriter(output_tfrecord_path + '-%05d-of-%05d' %
-                           (idx, num_shards)) for idx in range(num_shards)
-  ]
+  shard_id, num_shards = FLAGS.shard_id, FLAGS.num_shards
+  assert 0 <= shard_id < num_shards
+
+  writer = tf.io.TFRecordWriter(FLAGS.output_tfrecord_path + '-%05d-of-%05d' %
+                                (shard_id, num_shards))
 
   with zipfile.ZipFile(FLAGS.image_zip_file) as image_zip:
     for idx, annot in enumerate(annots):
       if (idx + 1) % 1000 == 0:
         logging.info('On example %i/%i.', idx + 1, len(annots))
 
-      # Read image data.
-      img_fn = os.path.join('vcr1images', annot['img_fn'])
-      try:
-        with image_zip.open(img_fn, 'r') as f:
-          encoded_jpg = f.read()
-      except Exception as ex:
-        logging.warn('Skip %s.', img_fn)
+      annot_id = int(annot['annot_id'].split('-')[-1])
+      if annot_id % num_shards != shard_id:
         continue
 
       # Read meta data.
@@ -257,14 +250,23 @@ def main(_):
         logging.warn('Skip %s.', meta_fn)
         continue
 
+      # Read image data.
+      encoded_jpg = None
+      if FLAGS.encode_jpeg:
+        img_fn = os.path.join('vcr1images', annot['img_fn'])
+        try:
+          with image_zip.open(img_fn, 'r') as f:
+            encoded_jpg = f.read()
+        except Exception as ex:
+          logging.warn('Skip %s.', img_fn)
+          continue
+
       # Create TF example.
       tf_example = _create_tf_example(encoded_jpg, annot, meta, bert_tokenizer,
                                       FLAGS.do_lower_case, FLAGS.image_max_size)
-      annot_id = int(annot['annot_id'].split('-')[-1])
-      writers[annot_id % num_shards].write(tf_example.SerializeToString())
+      writer.write(tf_example.SerializeToString())
 
-  for writer in writers:
-    writer.close()
+  writer.close()
 
   logging.info('Done')
 

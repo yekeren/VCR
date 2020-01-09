@@ -15,17 +15,17 @@ class OptimizationTest(tf.test.TestCase):
     options_str = "adagrad{}"
     options = text_format.Merge(options_str, optimizer_pb2.Optimizer())
     opt = optimization.create_optimizer(options)
-    self.assertIsInstance(opt, tf.keras.optimizers.Adagrad)
+    self.assertIsInstance(opt, tf.compat.v1.train.AdagradOptimizer)
 
     options_str = "rmsprop{}"
     options = text_format.Merge(options_str, optimizer_pb2.Optimizer())
     opt = optimization.create_optimizer(options)
-    self.assertIsInstance(opt, tf.keras.optimizers.RMSprop)
+    self.assertIsInstance(opt, tf.compat.v1.train.RMSPropOptimizer)
 
     options_str = "adam{}"
     options = text_format.Merge(options_str, optimizer_pb2.Optimizer())
     opt = optimization.create_optimizer(options)
-    self.assertIsInstance(opt, tf.keras.optimizers.Adam)
+    self.assertIsInstance(opt, tf.compat.v1.train.AdamOptimizer)
 
 
 if __name__ == '__main__':

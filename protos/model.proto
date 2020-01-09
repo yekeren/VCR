@@ -1,5 +1,7 @@
 syntax = "proto2";
 
+import "protos/fast_rcnn.proto";
+
 message Model {
   extensions 1000 to max;
 }
@@ -101,5 +103,7 @@ message VCRVBert {
 
   optional bool bert_finetune_all = 5 [default = false];
   repeated string bert_finetune_layers = 6;
+
+  optional FastRCNN fast_rcnn_config = 7;
 }
 
