@@ -5,15 +5,13 @@ from __future__ import print_function
 from absl import logging
 
 import tensorflow as tf
-from modeling.layers import fast_rcnn
+from modeling.models import fast_rcnn
 
 from google.protobuf import text_format
 from protos import fast_rcnn_pb2
 
-logging.set_verbosity(logging.DEBUG)
 
-
-class FastRCNNLayerTest(tf.test.TestCase):
+class FastRCNNTest(tf.test.TestCase):
 
   def test_fast_rcnn_layer(self):
     options_str = r"""
@@ -30,12 +28,17 @@ class FastRCNNLayerTest(tf.test.TestCase):
     """
     options = text_format.Merge(options_str, fast_rcnn_pb2.FastRCNN())
 
-    test_layer = fast_rcnn.FastRCNNLayer(options)
-
     inputs = tf.random.uniform(shape=[5, 320, 320, 3], maxval=255)
     proposals = tf.constant([[[0, 0, 1, 1]]] * 5, dtype=tf.float32)
-    output = test_layer(inputs, proposals)
-    self.assertAllEqual(output.shape, [5, 1, 1024])
+    outputs, init_fn = fast_rcnn.FastRCNN(inputs,
+                                          proposals,
+                                          options,
+                                          is_training=False)
+    self.assertAllEqual(outputs.shape, [5, 1, 1024])
+
+    with self.test_session() as sess:
+      init_fn(sess)
+      self.assertEmpty(sess.run(tf.compat.v1.report_uninitialized_variables()))
 
 
 if __name__ == '__main__':

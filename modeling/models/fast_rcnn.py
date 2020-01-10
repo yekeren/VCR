@@ -87,14 +87,14 @@ def FastRCNN(inputs, proposals, options, is_training=True):
       [batch, max_num_proposals, flattened_roi_pooled_features.shape[-1]])
 
   # Assign weights from pre-trained checkpoint.
-  tf.compat.v1.train.init_from_checkpoint(options.checkpoint_path,
-                                          assignment_map={
-                                              "FirstStageFeatureExtractor/":
-                                                  "FirstStageFeatureExtractor/"
-                                          })
-  tf.compat.v1.train.init_from_checkpoint(options.checkpoint_path,
-                                          assignment_map={
-                                              "SecondStageFeatureExtractor/":
-                                                  "SecondStageFeatureExtractor/"
-                                          })
-  return proposal_features
+  var_list = [
+      x for x in tf.compat.v1.global_variables()
+      if ('FirstStageFeatureExtractor' in x.op.name or
+          'SecondStageFeatureExtractor' in x.op.name)
+  ]
+  saver = tf.compat.v1.train.Saver(var_list)
+
+  def _init_fn(sess):
+    saver.restore(sess, options.checkpoint_path)
+
+  return proposal_features, _init_fn
