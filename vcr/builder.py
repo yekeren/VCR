@@ -3,20 +3,14 @@ from __future__ import division
 from __future__ import print_function
 
 from protos import model_pb2
-from modeling.models.vcr_bert import VCRBert
-from modeling.models.vcr_vbert import VCRVBert
-from modeling.models.vcr_bilstm_fuse import VCRBiLSTMFuse
-from modeling.models.vcr_bilstm_concat import VCRBiLSTMConcat
-from modeling.models.vcr_bilstm_glove import VCRBiLSTMGloVe
-from modeling.models.vcr_bilstm_bert import VCRBiLSTMBert
+from vcr.bert import VCRBert
+from vcr.vbert import VCRVBert
+from vcr.bilstm_glove import VCRBiLSTMGloVe
 
 MODELS = {
-    model_pb2.VCRBiLSTMFuse.ext: VCRBiLSTMFuse,
-    model_pb2.VCRBiLSTMConcat.ext: VCRBiLSTMConcat,
     model_pb2.VCRBert.ext: VCRBert,
     model_pb2.VCRVBert.ext: VCRVBert,
     model_pb2.VCRBiLSTMGloVe.ext: VCRBiLSTMGloVe,
-    model_pb2.VCRBiLSTMBert.ext: VCRBiLSTMBert,
 }
 
 

@@ -13,7 +13,7 @@ from protos import fast_rcnn_pb2
 
 
 def FastRCNN(inputs, proposals, options, is_training=True):
-  """Converts the inputs to token_ids.
+  """Runs FastRCNN model on the `inputs`.
 
   Args:
     inputs: Input image, a [batch, height, width, 3] float tensor. The pixel

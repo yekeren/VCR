@@ -25,6 +25,7 @@ class TFExampleFields(object):
   img_bbox_keys = ['ymin', 'xmin', 'ymax', 'xmax']
   img_bbox_label = "image/object/bbox/label"
   img_bbox_score = "image/object/bbox/score"
+  img_bbox_feature = "image/object/bbox/feature"
 
   question = 'question'
   answer_choice_1 = 'answer_choice_1'
@@ -53,6 +54,7 @@ class InputFields(object):
   object_bboxes = 'object_bboxes'
   object_labels = 'object_labels'
   object_scores = 'object_scores'
+  object_features = 'object_features'
 
   # Question and answer choices.
   question = 'question'
@@ -85,11 +87,12 @@ def _pad_sentences(sentences):
   return padded_sentences, lengths
 
 
-def _update_decoded_example(decoded_example):
+def _update_decoded_example(decoded_example, options):
   """Updates the decoded example, add size to the varlen feature.
 
   Args:
     decoded_example: A tensor dictionary keyed by name.
+    options: An instance of reader_pb2.Reader.
 
   Returns:
     decoded_example: The same instance with content modified.
@@ -97,6 +100,11 @@ def _update_decoded_example(decoded_example):
   # Number of objects.
   object_bboxes = decoded_example[InputFields.object_bboxes]
   num_objects = tf.shape(object_bboxes)[0]
+
+  # Object Fast-RCNN features.
+  object_features = decoded_example.pop(TFExampleFields.img_bbox_feature)
+  object_features = tf.reshape(object_features,
+                               [-1, options.frcnn_feature_dims])
 
   # Question length.
   question = decoded_example[InputFields.question]
@@ -117,6 +125,8 @@ def _update_decoded_example(decoded_example):
   decoded_example.update({
       InputFields.num_objects:
           num_objects,
+      InputFields.object_features:
+          object_features,
       InputFields.question_len:
           question_len,
       InputFields.answer_choices:
@@ -142,12 +152,12 @@ def _update_decoded_example(decoded_example):
   return decoded_example
 
 
-def _parse_single_example(example, decode_jpeg=False):
+def _parse_single_example(example, options):
   """Parses a single tf.Example proto.
 
   Args:
     example: An Example proto.
-    decode_jpeg: If true, decode the jpeg image.
+    options: An instance of reader_pb2.Reader.
 
   Returns:
     A dictionary indexed by tensor name.
@@ -159,6 +169,7 @@ def _parse_single_example(example, decode_jpeg=False):
       TFExampleFields.answer_label: tf.io.FixedLenFeature([], tf.int64),
       TFExampleFields.img_bbox_label: tf.io.VarLenFeature(tf.string),
       TFExampleFields.img_bbox_score: tf.io.VarLenFeature(tf.float32),
+      TFExampleFields.img_bbox_feature: tf.io.VarLenFeature(tf.float32),
       TFExampleFields.question: tf.io.VarLenFeature(tf.string),
   }
   for bbox_key in TFExampleFields.img_bbox_keys:
@@ -190,8 +201,11 @@ def _parse_single_example(example, decode_jpeg=False):
       InputFields.question:
           tfexample_decoder.Tensor(tensor_key=TFExampleFields.question,
                                    default_value=PAD),
+      TFExampleFields.img_bbox_feature:
+          tfexample_decoder.Tensor(tensor_key=TFExampleFields.img_bbox_feature,
+                                   default_value=0),
   }
-  if decode_jpeg:
+  if options.decode_jpeg:
     keys_to_features.update({
         TFExampleFields.img_encoded: tf.io.FixedLenFeature([], tf.string),
         TFExampleFields.img_format: tf.io.FixedLenFeature([], tf.string),
@@ -217,7 +231,7 @@ def _parse_single_example(example, decode_jpeg=False):
       x if x.dtype != tf.int64 else tf.cast(x, tf.int32) for x in output_tensors
   ]
   decoded_example = dict(zip(output_keys, output_tensors))
-  return _update_decoded_example(decoded_example)
+  return _update_decoded_example(decoded_example, options)
 
 
 def _create_dataset(options, is_training, input_pipeline_context=None):
@@ -250,7 +264,7 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
   dataset = dataset.interleave(tf.data.TFRecordDataset,
                                cycle_length=options.interleave_cycle_length)
 
-  parse_fn = lambda x: _parse_single_example(x, options.decode_jpeg)
+  parse_fn = lambda x: _parse_single_example(x, options)
   dataset = dataset.map(map_func=parse_fn,
                         num_parallel_calls=options.num_parallel_calls)
 
@@ -262,6 +276,7 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
       InputFields.object_bboxes: [None, 4],
       InputFields.object_labels: [None],
       InputFields.object_scores: [None],
+      InputFields.object_features: [None, options.frcnn_feature_dims],
       InputFields.question: [None],
       InputFields.question_len: [],
       InputFields.answer_choices: [NUM_CHOICES, None],
@@ -277,6 +292,7 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
       InputFields.object_bboxes: 0.0,
       InputFields.object_labels: '',
       InputFields.object_scores: 0.0,
+      InputFields.object_features: 0.0,
       InputFields.question: PAD,
       InputFields.question_len: 0,
       InputFields.answer_choices: PAD,
@@ -307,7 +323,7 @@ def get_input_fn(options, is_training):
   """Returns a function that generate input examples.
 
   Args:
-    options: an instance of reader_pb2.Reader.
+    options: An instance of reader_pb2.Reader.
     is_training: If true, shuffle the dataset.
 
   Returns:

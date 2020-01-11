@@ -10,10 +10,7 @@ import tensorflow as tf
 
 from protos import model_pb2
 from modeling.layers import token_to_id
-from modeling.models import fast_rcnn
-from modeling.models.model_base import ModelBase
-from modeling.utils import visualization
-from modeling.utils import masked_ops
+from vcr.model_base import ModelBase
 
 from readers.vcr_reader import InputFields
 from readers.vcr_reader import NUM_CHOICES
@@ -25,41 +22,14 @@ from bert.modeling import get_assignment_map_from_checkpoint
 FIELD_ANSWER_PREDICTION = 'answer_prediction'
 
 
-def _to_batch_coordinates(bboxes, height, width, max_height, max_width):
-  """Converts the normalized coordinates to be relative to the batch images.
-
-  Args:
-    bboxes: Normalized coordinates, a [..., 4] float tensor (values are in the
-      range of [0, 1]) denoting [ymin, xmin, ymax, xmax].
-    height: Image height.
-    width: Image width.
-    max_height: Maximum image height in the batch.
-    max_width: Maximum image width in the batch.
-
-  Returns:
-    Normalized coordinates relative to the batch images.
-  """
-  height, width, max_height, max_width = (tf.cast(height, tf.float32),
-                                          tf.cast(width, tf.float32),
-                                          tf.cast(max_height, tf.float32),
-                                          tf.cast(max_width, tf.float32))
-  height, width = tf.expand_dims(height, axis=1), tf.expand_dims(width, axis=1)
-
-  ymin, xmin, ymax, xmax = tf.unstack(bboxes, axis=-1)
-  return tf.stack([
-      ymin * height / max_height, xmin * width / max_width,
-      ymax * height / max_height, xmax * width / max_width
-  ], -1)
-
-
-class VCRVBert(ModelBase):
+class VCRBert(ModelBase):
   """Wraps the BiLSTM layer to solve the VCR task."""
 
   def __init__(self, model_proto, is_training):
-    super(VCRVBert, self).__init__(model_proto, is_training)
+    super(VCRBert, self).__init__(model_proto, is_training)
 
-    if not isinstance(model_proto, model_pb2.VCRVBert):
-      raise ValueError('Options has to be an VCRVBert proto.')
+    if not isinstance(model_proto, model_pb2.VCRBert):
+      raise ValueError('Options has to be an VCRBert proto.')
 
   def predict(self, inputs, **kwargs):
     """Predicts the resulting tensors.
@@ -73,45 +43,18 @@ class VCRVBert(ModelBase):
     is_training = self._is_training
     options = self._model_proto
 
-    (image, height, width, num_objects, object_bboxes, object_labels,
-     object_scores, answer_choices, answer_choices_len,
-     answer_label) = (inputs[InputFields.img_data],
-                      inputs[InputFields.img_height],
-                      inputs[InputFields.img_width],
-                      inputs[InputFields.num_objects],
-                      inputs[InputFields.object_bboxes],
-                      inputs[InputFields.object_labels],
-                      inputs[InputFields.object_scores],
-                      inputs[InputFields.answer_choices_with_question],
+    (answer_choices, answer_choices_len,
+     answer_label) = (inputs[InputFields.answer_choices_with_question],
                       inputs[InputFields.answer_choices_with_question_len],
                       inputs[InputFields.answer_label])
 
-    # Visualize image and object bboxes.
-    batch_size = image.shape[0]
-
-    image_batch_shape = tf.shape(image)
-    object_bboxes = _to_batch_coordinates(object_bboxes, height, width,
-                                          image_batch_shape[1],
-                                          image_batch_shape[2])
-    image_with_boxes = visualization.draw_bounding_boxes_on_image_tensors(
-        image, num_objects, object_bboxes, object_labels, object_scores)
-    tf.summary.image('vcr/detection', image_with_boxes, max_outputs=10)
-
-    # Extract FRCNN feature.
-    frcnn_features = fast_rcnn.FastRCNN(tf.cast(image, tf.float32),
-                                        object_bboxes,
-                                        options=options.fast_rcnn_config,
-                                        is_training=is_training)
-    object_masks = tf.sequence_mask(num_objects,
-                                    tf.shape(object_bboxes)[1],
-                                    dtype=tf.float32)
-    image_feature = masked_ops.masked_avg_nd(frcnn_features,
-                                             object_masks,
-                                             dim=1)
-
-    # Convert tokens into token ids.
+    # Create model layers.
     token_to_id_layer = token_to_id.TokenToIdLayer(options.bert_vocab_file,
                                                    options.bert_unk_token_id)
+
+    # Convert tokens into token ids.
+    batch_size = answer_choices.shape[0]
+
     answer_choices_token_ids = token_to_id_layer(answer_choices)
     answer_choices_token_ids_reshaped = tf.reshape(
         answer_choices_token_ids, [batch_size * NUM_CHOICES, -1])
@@ -135,10 +78,8 @@ class VCRVBert(ModelBase):
     assignment_map, _ = get_assignment_map_from_checkpoint(
         tf.global_variables(), options.bert_checkpoint_file)
 
-    # Fuse image feature.
-    image_feature_tiled = tf.tile(image_feature, [1, NUM_CHOICES, 1])
-    answer_choices_cls_feature = tf.concat(
-        [answer_choices_cls_feature, image_feature_tiled], -1)
+    tf.compat.v1.train.init_from_checkpoint(options.bert_checkpoint_file,
+                                            assignment_map)
 
     # Classification layer.
     output = tf.compat.v1.layers.dense(answer_choices_cls_feature,

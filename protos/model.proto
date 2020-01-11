@@ -1,6 +1,7 @@
 syntax = "proto2";
 
 import "protos/fast_rcnn.proto";
+import "protos/rnn.proto";
 
 message Model {
   extensions 1000 to max;
@@ -64,14 +65,12 @@ message VCRBiLSTMGloVe {
     optional VCRBiLSTMGloVe ext = 1003;
   }
   optional string vocab_file = 1;
-  optional uint32 vocab_size = 2;
-  optional uint32 unk_token_id = 3 [default = 100];
-  optional uint32 embedding_dims = 4 [default = 100];
 
   optional string glove_file = 5;
-  optional uint32 lstm_units = 6 [default = 128];
-  optional float lstm_dropout = 7 [default = 0];
-  optional float lstm_recurrent_dropout = 8 [default = 0];
+  
+  optional uint32 unk_token_id = 3 [default = 100];
+
+  optional RNN rnn_config = 6;
 }
 
 message VCRBiLSTMBert {

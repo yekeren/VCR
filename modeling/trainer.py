@@ -6,11 +6,11 @@ from absl import logging
 
 import tensorflow as tf
 
-from readers import reader
-from modeling.models import builder
 from modeling.utils import optimization
 from modeling.utils import learning_rate_schedule
 
+from vcr import builder
+from readers import reader
 from protos import pipeline_pb2
 
 

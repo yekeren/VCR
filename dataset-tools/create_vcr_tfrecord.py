@@ -33,8 +33,7 @@ flags.DEFINE_integer('num_shards', 10,
 
 flags.DEFINE_integer('shard_id', 0, 'Shard id of the current process.')
 
-flags.DEFINE_string('output_tfrecord_path',
-                    '/own_files/yekeren/VCR2/val.record',
+flags.DEFINE_string('output_tfrecord_path', 'output/val.record',
                     'Path to the output tfrecord files.')
 
 flags.DEFINE_string('image_zip_file', 'data/vcr1images.zip',
@@ -44,6 +43,10 @@ flags.DEFINE_integer('image_max_size', 400, 'Maximum size of the image.')
 
 flags.DEFINE_boolean('encode_jpeg', True,
                      'If true, add jpeg encoded image to the tf example.')
+
+flags.DEFINE_string('frcnn_feature_dir', 'output/fast_rcnn/inception_v2_coco',
+                    'Path to the directory saving features.')
+
 FLAGS = flags.FLAGS
 
 # GENDER_NEUTRAL_NAMES = [
@@ -55,6 +58,13 @@ GENDER_NEUTRAL_NAMES = [
     'Casey', 'Riley', 'Jessie', 'Jackie', 'Avery', 'Jaime', 'Peyton', 'Kerry',
     'Kendall', 'Frankie', 'Pat', 'Quinn'
 ]
+
+_NUM_PARTITIONS = 100
+
+
+def get_partition_id(annot_id, num_partitions=_NUM_PARTITIONS):
+  split, number = annot_id.split('-')
+  return int(number) % num_partitions
 
 
 def _load_annotations(filename):
@@ -100,15 +110,18 @@ def _fix_tokenization(tokenized_sent, obj_to_type, bert_tokenizer,
   return list(tokenized_sent), list(tags)
 
 
-def _create_tf_example(encoded_jpg, annot, meta, bert_tokenizer, do_lower_case,
-                       image_max_size):
+def _create_tf_example(encoded_jpg, annot, meta, rcnn_features, bert_tokenizer,
+                       do_lower_case, encode_jpeg, image_max_size):
   """Creates an example from the annotation.
 
   Args:
     encoded_jpg: A python string, the encoded jpeg data.
     annot: A python dictionary parsed from the json object.
+    meta: A python dictionary containing object information.
+    rcnn_features: A numpy array containing box features.
     bert_tokenizer: A tokenization.FullTokenizer object.
     do_lower_case: If true, convert text to lower case.
+    encode_jpeg: If true, encode the jpeg to the tf example.
     image_max_size: Resize the smaller size to this value.
 
   Returns:
@@ -161,9 +174,11 @@ def _create_tf_example(encoded_jpg, annot, meta, bert_tokenizer, do_lower_case,
   feature['image/object/bbox/ymax'] = _float_feature_list(ymax.tolist())
   feature['image/object/bbox/score'] = _float_feature_list(score.tolist())
   feature['image/object/bbox/label'] = _bytes_feature_list(obj_to_type)
+  feature['image/object/bbox/feature'] = _float_feature_list(
+      rcnn_features.flatten().tolist())
 
   # Encode jpg data, resize image if specified.
-  if encoded_jpg is not None:
+  if encode_jpeg:
     if image_max_size is not None:
       image = PIL.Image.open(io.BytesIO(encoded_jpg))
       assert image.format == 'JPEG'
@@ -251,19 +266,25 @@ def main(_):
         continue
 
       # Read image data.
-      encoded_jpg = None
-      if FLAGS.encode_jpeg:
-        img_fn = os.path.join('vcr1images', annot['img_fn'])
-        try:
-          with image_zip.open(img_fn, 'r') as f:
-            encoded_jpg = f.read()
-        except Exception as ex:
-          logging.warn('Skip %s.', img_fn)
-          continue
+      img_fn = os.path.join('vcr1images', annot['img_fn'])
+      try:
+        with image_zip.open(img_fn, 'r') as f:
+          encoded_jpg = f.read()
+      except Exception as ex:
+        logging.warn('Skip %s.', img_fn)
+        continue
+
+      # Read RCNN feature.
+      part_id = get_partition_id(annot['annot_id'])
+      rcnn_fn = os.path.join(FLAGS.frcnn_feature_dir, '%02d' % part_id,
+                             annot['annot_id'] + '.npy')
+      with open(rcnn_fn, 'rb') as f:
+        rcnn_features = np.load(f)
 
       # Create TF example.
-      tf_example = _create_tf_example(encoded_jpg, annot, meta, bert_tokenizer,
-                                      FLAGS.do_lower_case, FLAGS.image_max_size)
+      tf_example = _create_tf_example(encoded_jpg, annot, meta, rcnn_features,
+                                      bert_tokenizer, FLAGS.do_lower_case,
+                                      FLAGS.encode_jpeg, FLAGS.image_max_size)
       writer.write(tf_example.SerializeToString())
 
   writer.close()
