@@ -30,6 +30,9 @@ message FastRCNN {
 
   // Path to the pre-trained checkpoint.
   optional string checkpoint_path = 8;
+
+  // If true, initialize the FastRCNN model from a classification checkpoint.
+  optional bool from_classification_checkpoint = 9 [default = false];
 }
 
 message FasterRcnnFeatureExtractor {

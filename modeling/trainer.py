@@ -14,25 +14,6 @@ from readers import reader
 from protos import pipeline_pb2
 
 
-def add_gradients_summaries(grads_and_vars):
-  """Add summaries to gradients.
-
-  Args:
-    grads_and_vars: A list of gradient to variable pairs (tuples).
-  Returns:
-    The list of created summaries.
-  """
-  for grad, var in grads_and_vars:
-    if grad is not None:
-      tf.compat.v1.summary.histogram(
-          'summarize_grads/' + var.op.name + '/gradient', grad)
-      tf.compat.v1.summary.scalar(
-          'summarize_grads/' + var.op.name + '/gradient_norm',
-          tf.linalg.global_norm([grad]))
-    else:
-      logging.info('Var %s has no gradient', var.op.name)
-
-
 def _create_model_fn(pipeline_proto, is_chief=True):
   """Creates a callable that build the model.
 
@@ -66,11 +47,14 @@ def _create_model_fn(pipeline_proto, is_chief=True):
     predictions = model.predict(features)
 
     # Compute losses. Note: variables created in build_loss are not trainable.
-    total_loss = 0
     losses = model.build_losses(features, predictions)
     for name, loss in losses.items():
       tf.compat.v1.summary.scalar('metrics/' + name, loss)
-      total_loss += loss
+      tf.losses.add_loss(loss)
+    for loss in tf.losses.get_regularization_losses():
+      tf.summary.scalar(
+          "loss/regularization/" + '/'.join(loss.op.name.split('/')[:2]), loss)
+    total_loss = tf.losses.get_total_loss(add_regularization_losses=True)
 
     # Get variables_to_train.
     variables_to_train = model.get_variables_to_train()
@@ -90,13 +74,21 @@ def _create_model_fn(pipeline_proto, is_chief=True):
       tf.compat.v1.summary.scalar('metrics/learning_rate', learning_rate)
 
       # Use optimizer to minimize loss.
+
+      def transform_grads_fn(grads):
+        if train_config.HasField('max_gradient_norm'):
+          grads = tf.contrib.training.clip_gradient_norms(
+              grads, max_norm=train_config.max_gradient_norm)
+        return grads
+
       optimizer = optimization.create_optimizer(train_config.optimizer,
                                                 learning_rate=learning_rate)
-      grad_and_vars = optimizer.compute_gradients(total_loss,
-                                                  variables_to_train)
-      add_gradients_summaries(grad_and_vars)
-
-      train_op = optimizer.apply_gradients(grad_and_vars, global_step)
+      train_op = tf.contrib.training.create_train_op(
+          total_loss,
+          optimizer,
+          variables_to_train=variables_to_train,
+          transform_grads_fn=transform_grads_fn,
+          summarize_gradients=True)
 
     elif tf.estimator.ModeKeys.EVAL == mode:
 

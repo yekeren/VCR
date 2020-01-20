@@ -2,6 +2,7 @@ syntax = "proto2";
 
 import "protos/fast_rcnn.proto";
 import "protos/rnn.proto";
+import "protos/hyperparams.proto";
 
 message Model {
   extensions 1000 to max;
@@ -73,6 +74,19 @@ message VCRBiLSTMGloVe {
   optional RNN rnn_config = 6;
 }
 
+message VCRViBiLSTMGloVe {
+  extend Model {
+    optional VCRViBiLSTMGloVe ext = 1006;
+  }
+  optional string vocab_file = 1;
+
+  optional string glove_file = 5;
+  
+  optional uint32 unk_token_id = 3 [default = 100];
+
+  optional RNN rnn_config = 6;
+}
+
 message VCRBiLSTMBert {
   extend Model {
     optional VCRBiLSTMBert ext = 1004;
@@ -106,3 +120,124 @@ message VCRVBert {
   optional FastRCNN fast_rcnn_config = 7;
 }
 
+// Embedding config.
+message Embedding {
+  oneof embedding_oneof {
+    GloVeEmbedding glove_embedding = 1;
+    BertEmbedding bert_embedding = 2;
+  }
+}
+
+// GloVe embedding config.
+message GloVeEmbedding {
+  // Path to the vocabulary file.
+  optional string vocab_file = 1;
+
+  // Path to the pre-trained GloVe embedding file.
+  optional string glove_file = 5;
+
+  // Id of the UNK token. 
+  optional uint32 unk_token_id = 3 [default = 100];
+}
+
+// Bert embedding config.
+message BertEmbedding {
+}
+
+message VCRR2C {
+  extend Model {
+    optional VCRR2C ext = 1007;
+  }
+
+  // Word embedding config.
+  optional Embedding embedding_config = 1;
+
+  // RNN config.
+  optional RNN rnn_config = 6;
+}
+
+
+message VCRR2CGrounding {
+  extend Model {
+    optional VCRR2CGrounding ext = 1008;
+  }
+
+  // Word embedding config.
+  optional Embedding embedding_config = 1;
+
+  // RNN config.
+  optional RNN rnn_config = 6;
+}
+
+message R2CGlove {
+  extend Model {
+    optional R2CGlove ext = 1009;
+  }
+
+  // Path to the vocabulary file.
+  optional string vocab_file = 1;
+
+  // Path to the pre-trained GloVe embedding file.
+  optional string glove_file = 2;
+
+  // Id of the UNK token. 
+  optional uint32 unk_token_id = 3 [default = 100];
+
+  // RNN config.
+  optional RNN rnn_config = 4;
+
+  // If true, do not add visual features.
+  optional bool no_vision_representation = 5 [default = false];
+}
+
+message R2CBert{
+  extend Model {
+    optional R2CBert ext = 1010;
+  }
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  // If true, do not add visual features.
+  optional bool no_vision_representation = 2 [default = false];
+
+  optional int32 visual_feature_dims = 3 [default = 512];
+
+  optional bool pool_sequence_features = 4 [default = false];
+
+  optional string label_file = 5;
+
+  optional int32 label_vocab_size = 6 [default = 80];
+
+  optional int32 label_embedding_dims = 7 [default = 300];
+
+  optional Hyperparams hyperparams = 8;
+}
+
+message R2CVilBert{
+  extend Model {
+    optional R2CVilBert ext = 1011;
+  }
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  optional FastRCNN fast_rcnn_config = 9;
+
+  // If true, do not add visual features.
+  optional bool no_vision_representation = 2 [default = false];
+
+  optional int32 visual_feature_dims = 3 [default = 512];
+
+  optional bool pool_sequence_features = 4 [default = false];
+
+  optional string label_file = 5;
+
+  optional int32 label_vocab_size = 6 [default = 80];
+
+  optional int32 label_embedding_dims = 7 [default = 300];
+
+  optional Hyperparams hyperparams = 8;
+
+  optional int32 max_num_objects = 10 [default = 10];
+}

@@ -25,14 +25,17 @@ message VCRReader {
   // Prefetch buffer size.
   optional int32 prefetch_buffer_size = 7 [default = 200];
 
-  // If false, do not decode jpeg image.
-  optional bool decode_jpeg = 8 [default = false];
-
   // If true, cache dataset in the memory.
   optional bool cache_dataset = 9 [default = false];
 
   // Dimensions of the Fast-RCNN feature.
   optional int32 frcnn_feature_dims = 10 [default = 1024];
+
+  // Dimensions of the BERT feature.
+  optional int32 bert_feature_dims = 11 [default = 768];
+
+  // If false, do not decode jpeg image.
+  optional bool decode_jpeg = 15 [default = false];
 }
 
 

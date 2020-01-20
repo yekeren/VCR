@@ -16,7 +16,7 @@ def FastRCNN(inputs, proposals, options, is_training=True):
   """Runs FastRCNN model on the `inputs`.
 
   Args:
-    inputs: Input image, a [batch, height, width, 3] float tensor. The pixel
+    inputs: Input image, a [batch, height, width, 3] uint8 tensor. The pixel
       values are in the range of [0, 255].
     proposals: Boxes used to crop the image features, using normalized
       coordinates. It should be a [batch, max_num_proposals, 4] float tensor
@@ -32,12 +32,16 @@ def FastRCNN(inputs, proposals, options, is_training=True):
   """
   if not isinstance(options, fast_rcnn_pb2.FastRCNN):
     raise ValueError('The options has to be a fast_rcnn_pb2.FastRCNN proto!')
+  if inputs.dtype != tf.uint8:
+    raise ValueError('The inputs has to be a tf.uint8 tensor.')
+
+  inputs = tf.cast(inputs, tf.float32)
 
   # Create the feature extractor based on the config proto.
   feature_extractor = build_faster_rcnn_feature_extractor(
       feature_extractor_config=options.feature_extractor,
       inplace_batchnorm_update=options.inplace_batchnorm_update,
-      is_training=is_training)
+      is_training=False)
 
   # Extract `features_to_crop` from the original image.
   #   shape = [batch, feature_map_h, feature_map_w, feature_map_d].
@@ -69,32 +73,57 @@ def FastRCNN(inputs, proposals, options, is_training=True):
       [options.maxpool_kernel_size, options.maxpool_kernel_size],
       stride=options.maxpool_stride)
 
-  # Extract `proposal_features`,
+  # Extract `proposal_features` using the detection meta architecture,
   #   shape = [batch, max_num_proposals, feature_dims].
-  box_classifier_features = feature_extractor.extract_box_classifier_features(
-      flattened_proposal_features_maps, scope='SecondStageFeatureExtractor')
 
-  flattened_roi_pooled_features = tf.reduce_mean(box_classifier_features,
-                                                 [1, 2],
-                                                 name='AvgPool')
-  flattened_roi_pooled_features = slim.dropout(
-      flattened_roi_pooled_features,
-      keep_prob=options.dropout_keep_prob,
-      is_training=is_training)
+  # Initialize from a classification model.
+  if options.from_classification_checkpoint:
+    flattened_roi_pooled_features = tf.reduce_mean(
+        flattened_proposal_features_maps, [1, 2], name='AvgPool')
+    flattened_roi_pooled_features = slim.dropout(
+        flattened_roi_pooled_features,
+        keep_prob=options.dropout_keep_prob,
+        is_training=is_training)
 
-  proposal_features = tf.reshape(
-      flattened_roi_pooled_features,
-      [batch, max_num_proposals, flattened_roi_pooled_features.shape[-1]])
+    proposal_features = tf.reshape(
+        flattened_roi_pooled_features,
+        [batch, max_num_proposals, flattened_roi_pooled_features.shape[-1]])
 
-  # Assign weights from pre-trained checkpoint.
-  var_list = [
-      x for x in tf.compat.v1.global_variables()
-      if ('FirstStageFeatureExtractor' in x.op.name or
-          'SecondStageFeatureExtractor' in x.op.name)
-  ]
-  saver = tf.compat.v1.train.Saver(var_list)
+    var_list = dict([(x.op.name[len('FirstStageFeatureExtractor/'):], x)
+                     for x in tf.compat.v1.global_variables()
+                     if 'FirstStageFeatureExtractor' in x.op.name])
+    saver = tf.compat.v1.train.Saver(var_list)
 
-  def _init_fn(sess):
-    saver.restore(sess, options.checkpoint_path)
+    def _init_from_classification_ckpt_fn(_, sess):
+      saver.restore(sess, options.checkpoint_path)
 
-  return proposal_features, _init_fn
+    return proposal_features, _init_from_classification_ckpt_fn
+
+  # Initialize from a detection model.
+  else:
+    box_classifier_features = feature_extractor.extract_box_classifier_features(
+        flattened_proposal_features_maps, scope='SecondStageFeatureExtractor')
+
+    flattened_roi_pooled_features = tf.reduce_mean(box_classifier_features,
+                                                   [1, 2],
+                                                   name='AvgPool')
+    flattened_roi_pooled_features = slim.dropout(
+        flattened_roi_pooled_features,
+        keep_prob=options.dropout_keep_prob,
+        is_training=is_training)
+
+    proposal_features = tf.reshape(
+        flattened_roi_pooled_features,
+        [batch, max_num_proposals, flattened_roi_pooled_features.shape[-1]])
+
+    var_list = [
+        x for x in tf.compat.v1.global_variables()
+        if ('FirstStageFeatureExtractor' in x.op.name or
+            'SecondStageFeatureExtractor' in x.op.name)
+    ]
+    saver = tf.compat.v1.train.Saver(var_list)
+
+    def _init_from_detection_ckpt_fn(_, sess):
+      saver.restore(sess, options.checkpoint_path)
+
+    return proposal_features, _init_from_detection_ckpt_fn

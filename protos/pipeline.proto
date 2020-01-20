@@ -57,4 +57,7 @@ message TrainConfig {
 
   // The maximum number of recent checkpoint files to keep.
   optional uint32 keep_checkpoint_max = 7 [default = 5];
+
+  // Max gradient norm to be clipped.
+  optional float max_gradient_norm = 8;
 }

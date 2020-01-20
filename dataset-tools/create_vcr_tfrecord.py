@@ -36,16 +36,26 @@ flags.DEFINE_integer('shard_id', 0, 'Shard id of the current process.')
 flags.DEFINE_string('output_tfrecord_path', 'output/val.record',
                     'Path to the output tfrecord files.')
 
-flags.DEFINE_string('image_zip_file', 'data/vcr1images.zip',
+flags.DEFINE_string('image_zip_file', '/own_files/yekeren/vcr1images.zip',
                     'Path to the zip file of images.')
 
-flags.DEFINE_integer('image_max_size', 400, 'Maximum size of the image.')
+flags.DEFINE_string('frcnn_feature_dir',
+                    'output/fast_rcnn/inception_resnet_v2_imagenet',
+                    'Path to the directory saving FRCNN features.')
+
+flags.DEFINE_string('bert_feature_dir',
+                    '/own_files/yekeren/bert/cased_L-12_H-768_A-12',
+                    'Path to the directory saving Bert features.')
+
+flags.DEFINE_boolean('only_use_relevant_dets', True,
+                     'If true, only use relevant detections.')
 
 flags.DEFINE_boolean('encode_jpeg', True,
                      'If true, add jpeg encoded image to the tf example.')
 
-flags.DEFINE_string('frcnn_feature_dir', 'output/fast_rcnn/inception_v2_coco',
-                    'Path to the directory saving features.')
+flags.DEFINE_integer('desired_height', 384, 'Desired height of the images.')
+
+flags.DEFINE_integer('desired_width', 768, 'Desired width of the images.')
 
 FLAGS = flags.FLAGS
 
@@ -80,13 +90,14 @@ def _load_annotations(filename):
     return [json.loads(x.strip('\n')) for x in f]
 
 
-def _fix_tokenization(tokenized_sent, obj_to_type, bert_tokenizer,
-                      do_lower_case):
+def _fix_tokenization(tokenized_sent, obj_to_type, old_det_to_new_ind,
+                      bert_tokenizer, do_lower_case):
   """Converts tokenized annotations into tokenized sentence.
 
   Args:
     tokenized_sent: Tokenized sentence with detections collapsed to a list.
     obj_to_type: [person, person, pottedplant] indexed by the labels.
+    old_det_to_new_ind: A mapping from the old indices to the new indices.
 
   Returns:
     tokenized_sent: A list of string tokens.
@@ -97,6 +108,9 @@ def _fix_tokenization(tokenized_sent, obj_to_type, bert_tokenizer,
   for tok in tokenized_sent:
     if isinstance(tok, list):
       for idx in tok:
+        if old_det_to_new_ind is not None:
+          idx = old_det_to_new_ind[idx]
+
         obj_type = obj_to_type[idx]
         text_to_use = GENDER_NEUTRAL_NAMES[
             idx %
@@ -110,19 +124,54 @@ def _fix_tokenization(tokenized_sent, obj_to_type, bert_tokenizer,
   return list(tokenized_sent), list(tags)
 
 
-def _create_tf_example(encoded_jpg, annot, meta, rcnn_features, bert_tokenizer,
-                       do_lower_case, encode_jpeg, image_max_size):
+def get_detections_to_use(obj_to_type, tokens_mixed_with_tags):
+  """Gets the detections to use, filtering out objects that are not mentioned.
+
+  Args:
+    obj_to_type: A list of object names.
+    tokens_mixed_with_tags: Sentences that refer to the object list.
+
+  Returns:
+    indices: Indices in the obj_to_type, denoting the mentioned objects.
+  """
+  detections_to_use = np.zeros(len(obj_to_type), dtype=bool)
+  people = np.array([x == 'person' for x in obj_to_type], dtype=bool)
+
+  for sentence in tokens_mixed_with_tags:
+    for possibly_det_list in sentence:
+      if isinstance(possibly_det_list, list):
+        for tag in possibly_det_list:
+          assert 0 <= tag < len(obj_to_type)
+          detections_to_use[tag] = True
+      elif possibly_det_list.lower() in ['everyone', 'everyones']:
+        detections_to_use |= people
+  if not detections_to_use.any():
+    detections_to_use |= people
+  detections_to_use = np.where(detections_to_use)[0]
+
+  old_det_to_new_ind = np.zeros(len(obj_to_type), dtype=np.int32) - 1
+  old_det_to_new_ind[detections_to_use] = np.arange(detections_to_use.shape[0],
+                                                    dtype=np.int32)
+  return detections_to_use, old_det_to_new_ind
+
+
+def _create_tf_example(encoded_jpg, annot, meta, image_and_rcnn_features,
+                       bert_features, bert_tokenizer, do_lower_case,
+                       encode_jpeg, desired_height, desired_width,
+                       only_use_relevant_dets):
   """Creates an example from the annotation.
 
   Args:
     encoded_jpg: A python string, the encoded jpeg data.
     annot: A python dictionary parsed from the json object.
     meta: A python dictionary containing object information.
-    rcnn_features: A numpy array containing box features.
+    image_and_rcnn_features: A numpy array containing box features.
+    bert_features: A numpy array containing bert features.
     bert_tokenizer: A tokenization.FullTokenizer object.
     do_lower_case: If true, convert text to lower case.
     encode_jpeg: If true, encode the jpeg to the tf example.
-    image_max_size: Resize the smaller size to this value.
+    desired_height: Desired image height.
+    desired_width: Desired image width.
 
   Returns:
     tf_example: A tf.train.Example proto.
@@ -161,9 +210,31 @@ def _create_tf_example(encoded_jpg, annot, meta, rcnn_features, bert_tokenizer,
          ), 'Meta data does not match the annotation.'
 
   obj_to_type = annot['objects']
-  boxes = np.array(meta['boxes'])
-  xmin, ymin, xmax, ymax, score = [boxes[:, i] for i in range(5)]
+  question = annot['question']
+  answer_choices = annot['answer_choices']
+  assert NUM_CHOICES == len(answer_choices)
 
+  obj_to_type = np.array(obj_to_type)
+  boxes = np.array(meta['boxes'])
+  rcnn_features = image_and_rcnn_features[1:]
+
+  old_det_to_new_ind = None
+  if only_use_relevant_dets:
+    detections_to_use, old_det_to_new_ind = get_detections_to_use(
+        obj_to_type, [question] + answer_choices)
+
+    # Gather elements using the new indices.
+    obj_to_type = obj_to_type[detections_to_use]
+    boxes = boxes[detections_to_use]
+    rcnn_features = rcnn_features[detections_to_use]
+
+  # Add [0, 0, height, width] as for the full image.
+  obj_to_type = np.concatenate([['image'], obj_to_type], 0)
+  boxes = np.concatenate([[[0, 0, image_width, image_height, 1]], boxes], 0)
+  rcnn_features = np.concatenate([image_and_rcnn_features[:1], rcnn_features],
+                                 0)
+
+  xmin, ymin, xmax, ymax, score = [boxes[:, i] for i in range(5)]
   xmin /= image_width
   ymin /= image_height
   xmax /= image_width
@@ -173,24 +244,25 @@ def _create_tf_example(encoded_jpg, annot, meta, rcnn_features, bert_tokenizer,
   feature['image/object/bbox/xmax'] = _float_feature_list(xmax.tolist())
   feature['image/object/bbox/ymax'] = _float_feature_list(ymax.tolist())
   feature['image/object/bbox/score'] = _float_feature_list(score.tolist())
-  feature['image/object/bbox/label'] = _bytes_feature_list(obj_to_type)
+  feature['image/object/bbox/label'] = _bytes_feature_list(obj_to_type.tolist())
   feature['image/object/bbox/feature'] = _float_feature_list(
       rcnn_features.flatten().tolist())
 
   # Encode jpg data, resize image if specified.
   if encode_jpeg:
-    if image_max_size is not None:
-      image = PIL.Image.open(io.BytesIO(encoded_jpg))
-      assert image.format == 'JPEG'
+    image = PIL.Image.open(io.BytesIO(encoded_jpg))
+    assert image.format == 'JPEG'
 
-      image_scale = image_max_size / min(image.height, image.width)
-      image_height, image_width = (int(image.height * image_scale),
-                                   int(image.width * image_scale))
+    width_scale = desired_width / image.width
+    height_scale = desired_height / image.height
+    image_scale = min(width_scale, height_scale)
+    image_height, image_width = (int(image.height * image_scale),
+                                 int(image.width * image_scale))
 
-      image = image.resize((image_width, image_height))
-      with io.BytesIO() as output:
-        image.save(output, format="JPEG")
-        encoded_jpg = output.getvalue()
+    image = image.resize((image_width, image_height))
+    with io.BytesIO() as output:
+      image.save(output, format="JPEG")
+      encoded_jpg = output.getvalue()
 
     feature['image/height'] = _int64_feature(image_height)
     feature['image/width'] = _int64_feature(image_width)
@@ -198,33 +270,36 @@ def _create_tf_example(encoded_jpg, annot, meta, rcnn_features, bert_tokenizer,
     feature['image/encoded'] = tf.train.Feature(bytes_list=tf.train.BytesList(
         value=[encoded_jpg]))
 
-  # Encode question and answer choices.
-  question = annot['question']
-  answer_choices = annot['answer_choices']
-  assert NUM_CHOICES == len(answer_choices)
-
-  def _convert_tokens_to_ids(tokens):
-    output = []
-    for token in tokens:
-      if token in bert_tokenizer.vocab:
-        output.append(bert_tokenizer.vocab[token])
-      else:
-        output.append(bert_tokenizer.vocab["[UNK]"])
-    return output
-
   # Encode question.
   question_tokens, question_tags = _fix_tokenization(question, obj_to_type,
+                                                     old_det_to_new_ind,
                                                      bert_tokenizer,
                                                      do_lower_case)
   feature['question'] = _bytes_feature_list(question_tokens)
   feature['question_tag'] = _int64_feature_list(question_tags)
 
-  # Encode answer choices.
+  assert NUM_CHOICES == len(bert_features)
   for idx, tokenized_sent in enumerate(answer_choices):
+    # Encode answer choices.
     tokens, tags = _fix_tokenization(tokenized_sent, obj_to_type,
-                                     bert_tokenizer, do_lower_case)
+                                     old_det_to_new_ind, bert_tokenizer,
+                                     do_lower_case)
     feature['answer_choice_%i' % (idx + 1)] = _bytes_feature_list(tokens)
     feature['answer_choice_tag_%i' % (idx + 1)] = _int64_feature_list(tags)
+
+    # Encode bert embeddings,
+    # Loaded embedding form: "[CLS] question [SEP] answer [SEP]".
+    bert_feature = bert_features[idx]
+    assert bert_feature.shape[0] == 3 + len(question_tokens) + len(tokens)
+    question_bert = bert_feature[1:len(question_tokens) + 1]
+    answer_choice_bert = bert_feature[len(question_tokens) + 2:-1]
+
+    feature['question_bert_%i' % (idx + 1)] = _float_feature_list(
+        question_bert.flatten().tolist())
+    feature['answer_choice_bert_%i' % (idx + 1)] = _float_feature_list(
+        answer_choice_bert.flatten().tolist())
+    feature['answer_choice_with_question_bert_%i' %
+            (idx + 1)] = _float_feature_list(bert_feature.flatten().tolist())
 
   tf_example = tf.train.Example(features=tf.train.Features(feature=feature))
   return tf_example
@@ -266,25 +341,39 @@ def main(_):
         continue
 
       # Read image data.
+      encoded_jpg = None
       img_fn = os.path.join('vcr1images', annot['img_fn'])
-      try:
-        with image_zip.open(img_fn, 'r') as f:
-          encoded_jpg = f.read()
-      except Exception as ex:
-        logging.warn('Skip %s.', img_fn)
-        continue
+      if FLAGS.encode_jpeg:
+        try:
+          with image_zip.open(img_fn, 'r') as f:
+            encoded_jpg = f.read()
+        except Exception as ex:
+          logging.warn('Skip %s.', img_fn)
+          continue
 
       # Read RCNN feature.
       part_id = get_partition_id(annot['annot_id'])
       rcnn_fn = os.path.join(FLAGS.frcnn_feature_dir, '%02d' % part_id,
                              annot['annot_id'] + '.npy')
+      if not os.path.isfile(rcnn_fn):
+        logging.warn('Skip %s.', rcnn_fn)
+        continue
       with open(rcnn_fn, 'rb') as f:
         rcnn_features = np.load(f)
 
+      # Read Bert feature.
+      part_id = get_partition_id(annot['annot_id'])
+      bert_fn = os.path.join(FLAGS.bert_feature_dir, '%02d' % part_id,
+                             annot['annot_id'] + '.npy')
+      with open(bert_fn, 'rb') as f:
+        bert_features = np.load(f, allow_pickle=True)
+
       # Create TF example.
       tf_example = _create_tf_example(encoded_jpg, annot, meta, rcnn_features,
-                                      bert_tokenizer, FLAGS.do_lower_case,
-                                      FLAGS.encode_jpeg, FLAGS.image_max_size)
+                                      bert_features, bert_tokenizer,
+                                      FLAGS.do_lower_case, FLAGS.encode_jpeg,
+                                      FLAGS.desired_height, FLAGS.desired_width,
+                                      FLAGS.only_use_relevant_dets)
       writer.write(tf_example.SerializeToString())
 
   writer.close()

@@ -6,6 +6,7 @@ from absl import app
 from absl import flags
 from absl import logging
 
+import os
 import tensorflow as tf
 from google.protobuf import text_format
 from protos import pipeline_pb2
@@ -39,6 +40,11 @@ def main(_):
 
   for gpu in tf.config.experimental.list_physical_devices('GPU'):
     tf.config.experimental.set_memory_growth(gpu, True)
+
+  tf.io.gfile.makedirs(FLAGS.model_dir)
+  tf.io.gfile.copy(FLAGS.pipeline_proto,
+                   os.path.join(FLAGS.model_dir, 'pipeline.pbtxt'),
+                   overwrite=True)
 
   pipeline_proto = _load_pipeline_proto(FLAGS.pipeline_proto)
   trainer.train_and_evaluate(pipeline_proto=pipeline_proto,
