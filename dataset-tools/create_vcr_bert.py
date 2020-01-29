@@ -47,7 +47,7 @@ flags.DEFINE_integer('num_shards', 10,
 flags.DEFINE_integer('shard_id', 0, 'Shard id of the current process.')
 
 flags.DEFINE_string('output_bert_feature_dir',
-                    'output/bert/cased_L-12_H-768_A-12',
+                    'output/bert-tmp/cased_L-12_H-768_A-12',
                     'Path to the directory saving features.')
 
 FLAGS = flags.FLAGS
@@ -144,6 +144,9 @@ def _create_bert_embeddings(annot, bert_tokenizer, do_lower_case, bert_fn):
     input_sequence = ['[CLS]'] + question_tokens + [
         '[SEP]'
     ] + answer_choice_tokens + ['[SEP]']
+    sequence_output, pooled_output = bert_fn(input_sequence)
+    import pdb
+    pdb.set_trace()
     bert_outputs.append(bert_fn(input_sequence))
   return bert_outputs
 
@@ -170,6 +173,7 @@ def main(_):
                          input_ids=token_to_id_layer(
                              tf.expand_dims(input_placeholder, 0)))
   sequence_output = bert_model.get_sequence_output()[0]
+  pooled_output = bert_model.get_pooled_output()[0]
   saver = tf.compat.v1.train.Saver()
 
   config = tf.ConfigProto()
@@ -182,7 +186,8 @@ def main(_):
     logging.warn('%s is uninitialized!', name)
 
   def _bert_fn(sequence):
-    return sess.run(sequence_output, feed_dict={input_placeholder: sequence})
+    return sess.run([sequence_output, pooled_output],
+                    feed_dict={input_placeholder: sequence})
 
   # Load annotations.
   annots = _load_annotations(FLAGS.annotations_jsonl_file)

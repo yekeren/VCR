@@ -3,6 +3,8 @@ syntax = "proto2";
 message Reader {
   oneof reader_oneof {
     VCRReader vcr_reader = 1;
+    VCRTextOnlyReader vcr_text_only_reader = 2;
+    VCRTextImageReader vcr_text_image_reader = 3;
   }
 }
 
@@ -36,6 +38,52 @@ message VCRReader {
 
   // If false, do not decode jpeg image.
   optional bool decode_jpeg = 15 [default = false];
+}
+
+message VCRTextOnlyReader {
+  // Pattern of the input files.
+  repeated string input_pattern = 1;
+
+  // Shuffle buffer size.
+  optional int32 shuffle_buffer_size = 2 [default = 1000];
+
+  // Cycle length of interleave call.
+  optional int32 interleave_cycle_length = 4 [default = 2];
+
+  // Number of parallel calls.
+  optional int32 num_parallel_calls = 5 [default = 5];
+
+  // Batch size.
+  optional int32 batch_size = 6 [default = 32];
+
+  // Prefetch buffer size.
+  optional int32 prefetch_buffer_size = 7 [default = 200];
+
+  // If true, cache dataset in the memory.
+  optional bool cache_dataset = 9 [default = false];
+}
+
+message VCRTextImageReader {
+  // Pattern of the input files.
+  repeated string input_pattern = 1;
+
+  // Shuffle buffer size.
+  optional int32 shuffle_buffer_size = 2 [default = 1000];
+
+  // Cycle length of interleave call.
+  optional int32 interleave_cycle_length = 4 [default = 2];
+
+  // Number of parallel calls.
+  optional int32 num_parallel_calls = 5 [default = 5];
+
+  // Batch size.
+  optional int32 batch_size = 6 [default = 32];
+
+  // Prefetch buffer size.
+  optional int32 prefetch_buffer_size = 7 [default = 200];
+
+  // If true, cache dataset in the memory.
+  optional bool cache_dataset = 9 [default = false];
 }
 
 

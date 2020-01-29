@@ -23,7 +23,7 @@ from protos import fast_rcnn_pb2
 from modeling.models import fast_rcnn
 
 flags.DEFINE_string('fast_rcnn_config',
-                    'configs/fast_rcnn/inception_resnet_v2_imagenet.pbtxt',
+                    'configs/fast_rcnn/inception_resnet_v2_oid.pbtxt',
                     'Path to the FastRCNN config file.')
 
 flags.DEFINE_string('annotations_jsonl_file', 'data/vcr1annots/val.jsonl',
@@ -40,7 +40,7 @@ flags.DEFINE_string('image_zip_file', '/own_files/yekeren/vcr1images.zip',
 flags.DEFINE_integer('image_max_size', None, 'Maximum size of the image.')
 
 flags.DEFINE_string('output_frcnn_feature_dir',
-                    'output/fast_rcnn/inception_resnet_v2_imagenet',
+                    'output/fast_rcnn/inception_resnet_v2_oid',
                     'Path to the directory saving features.')
 
 FLAGS = flags.FLAGS
@@ -93,6 +93,9 @@ def main(_):
   for name in sess.run(tf.compat.v1.report_uninitialized_variables()):
     logging.warn('%s is uninitialized!', name)
 
+  if FLAGS.image_max_size is not None:
+    raise ValueError('Deprecated flag!')
+  
   # Load annotations.
   annots = _load_annotations(FLAGS.annotations_jsonl_file)
   logging.info('Loaded %i annotations.', len(annots))
@@ -113,9 +116,9 @@ def main(_):
       part_id = get_partition_id(annot['annot_id'])
       output_file = os.path.join(FLAGS.output_frcnn_feature_dir,
                                  '%02d' % part_id, annot['annot_id'] + '.npy')
-      # if os.path.isfile(output_file):
-      #   logging.info('%s is there.', output_file)
-      #   continue
+      if os.path.isfile(output_file):
+        logging.info('%s is there.', output_file)
+        continue
 
       # Read meta data.
       meta_fn = os.path.join('vcr1images', annot['metadata_fn'])
@@ -138,11 +141,6 @@ def main(_):
       # Decode and resize image.
       image = PIL.Image.open(io.BytesIO(encoded_jpg))
       assert image.format == 'JPEG'
-      if FLAGS.image_max_size is not None:
-        image_scale = FLAGS.image_max_size / min(image.height, image.width)
-        new_height, new_width = (int(image.height * image_scale),
-                                 int(image.width * image_scale))
-        image = image.resize((new_width, new_height))
 
       image = np.array(image)
       boxes_and_scores = np.array(meta['boxes'])

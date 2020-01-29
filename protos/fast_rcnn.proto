@@ -33,6 +33,9 @@ message FastRCNN {
 
   // If true, initialize the FastRCNN model from a classification checkpoint.
   optional bool from_classification_checkpoint = 9 [default = false];
+
+  // Weight decay of the FastRCNN feature extractor.
+  optional float weight_decay = 10 [default = 0.0];
 }
 
 message FasterRcnnFeatureExtractor {

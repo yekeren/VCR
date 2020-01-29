@@ -144,19 +144,6 @@ message GloVeEmbedding {
 message BertEmbedding {
 }
 
-message VCRR2C {
-  extend Model {
-    optional VCRR2C ext = 1007;
-  }
-
-  // Word embedding config.
-  optional Embedding embedding_config = 1;
-
-  // RNN config.
-  optional RNN rnn_config = 6;
-}
-
-
 message VCRR2CGrounding {
   extend Model {
     optional VCRR2CGrounding ext = 1008;
@@ -214,9 +201,33 @@ message R2CBert{
   optional Hyperparams hyperparams = 8;
 }
 
+message VCRBertNextSentence {
+  extend Model {
+    optional VCRBertNextSentence ext = 1012;
+  }
+
+  // Path to the bert config file.
+  optional string bert_config_file = 1;
+
+  // Path to the bert vocabulary file.
+  optional string bert_vocab_file = 2;
+
+  // Path to the pre-trained bert checkpoint.
+  optional string bert_checkpoint_file = 3;
+
+  // Out-of-Vocabulary token id.
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  // If true, fine-tune all bert layers.
+  optional bool bert_finetune_all = 5 [default = false];
+
+  // Bert layers to be fine-tuned, if `bert_finetune_all` is not set.
+  repeated string bert_finetune_layers = 6;
+}
+
 message R2CVilBert{
   extend Model {
-    optional R2CVilBert ext = 1011;
+    optional R2CVilBert ext = 1013;
   }
 
   // RNN config.
@@ -224,6 +235,8 @@ message R2CVilBert{
 
   optional FastRCNN fast_rcnn_config = 9;
 
+  optional Hyperparams conv_hyperparams = 16;
+  
   // If true, do not add visual features.
   optional bool no_vision_representation = 2 [default = false];
 
@@ -237,7 +250,88 @@ message R2CVilBert{
 
   optional int32 label_embedding_dims = 7 [default = 300];
 
-  optional Hyperparams hyperparams = 8;
+  optional Hyperparams fc_hyperparams = 8;
 
   optional int32 max_num_objects = 10 [default = 10];
+}
+
+message VCRBertEarlyFusion {
+  extend Model {
+    optional VCRBertEarlyFusion ext = 1014;
+  }
+
+  // Path to the bert config file.
+  optional string bert_config_file = 1;
+
+  // Path to the bert vocabulary file.
+  optional string bert_vocab_file = 2;
+
+  // Path to the pre-trained bert checkpoint.
+  optional string bert_checkpoint_file = 3;
+
+  // Out-of-Vocabulary token id.
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  optional FastRCNN fast_rcnn_config = 7;
+
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional int32 max_num_objects = 9 [default = 10];
+
+  // Layers to be freezed.
+  repeated string frozen_variable_patterns = 6;
+
+  optional bool no_image = 111 [default = false];
+
+}
+
+message VCRR2CFrozen {
+  extend Model {
+    optional VCRR2CFrozen ext = 1007;
+  }
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  optional int32 visual_feature_dims = 3 [default = 512];
+
+  optional string label_file = 5;
+
+  optional int32 label_vocab_size = 6 [default = 80];
+
+  optional int32 label_embedding_dims = 7 [default = 300];
+
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional int32 max_num_objects = 10 [default = 10];
+
+  optional float dropout_keep_prob = 11 [default = 0.7];
+
+  optional bool use_cls_token_embedding = 12 [default = false];
+
+  optional bool use_max_pooling = 13 [default = false];
+}
+
+
+message VCRR2CFrozenSimple {
+  extend Model {
+    optional VCRR2CFrozenSimple ext = 1018;
+  }
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  optional int32 visual_feature_dims = 3 [default = 512];
+
+  optional string label_file = 5;
+
+  optional int32 label_vocab_size = 6 [default = 80];
+
+  optional int32 label_embedding_dims = 7 [default = 300];
+
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional int32 max_num_objects = 10 [default = 10];
+
+  optional float dropout_keep_prob = 11 [default = 0.7];
 }
