@@ -37,11 +37,14 @@ def FastRCNN(inputs, proposals, options, is_training=True):
 
   inputs = tf.cast(inputs, tf.float32)
 
+  first_stage_box_predictor_arg_scope_fn = None
+
   # Create the feature extractor based on the config proto.
   feature_extractor = build_faster_rcnn_feature_extractor(
       feature_extractor_config=options.feature_extractor,
       inplace_batchnorm_update=options.inplace_batchnorm_update,
-      is_training=False)
+      is_training=is_training,
+      weight_decay=options.weight_decay)
 
   # Extract `features_to_crop` from the original image.
   #   shape = [batch, feature_map_h, feature_map_w, feature_map_d].
@@ -78,8 +81,12 @@ def FastRCNN(inputs, proposals, options, is_training=True):
 
   # Initialize from a classification model.
   if options.from_classification_checkpoint:
-    flattened_roi_pooled_features = tf.reduce_mean(
-        flattened_proposal_features_maps, [1, 2], name='AvgPool')
+    box_classifier_features = feature_extractor.extract_box_classifier_features(
+        flattened_proposal_features_maps, scope='SecondStageFeatureExtractor')
+
+    flattened_roi_pooled_features = tf.reduce_mean(box_classifier_features,
+                                                   [1, 2],
+                                                   name='AvgPool')
     flattened_roi_pooled_features = slim.dropout(
         flattened_roi_pooled_features,
         keep_prob=options.dropout_keep_prob,
@@ -89,13 +96,28 @@ def FastRCNN(inputs, proposals, options, is_training=True):
         flattened_roi_pooled_features,
         [batch, max_num_proposals, flattened_roi_pooled_features.shape[-1]])
 
-    var_list = dict([(x.op.name[len('FirstStageFeatureExtractor/'):], x)
-                     for x in tf.compat.v1.global_variables()
-                     if 'FirstStageFeatureExtractor' in x.op.name])
+    var_list = {}
+    for var in tf.compat.v1.global_variables():
+      var_name = var.op.name
+      if (var_name.startswith('FirstStageFeatureExtractor') or
+          var_name.startswith('SecondStageFeatureExtractor')):
+        if var_name.startswith(
+            'SecondStageFeatureExtractor/InceptionResnetV2/Repeat'):
+          var_name = var_name.replace(
+              'SecondStageFeatureExtractor/InceptionResnetV2/Repeat',
+              'SecondStageFeatureExtractor/InceptionResnetV2/Repeat_2')
+        var_list[var_name.split('/', 1)[1]] = var
     saver = tf.compat.v1.train.Saver(var_list)
 
     def _init_from_classification_ckpt_fn(_, sess):
       saver.restore(sess, options.checkpoint_path)
+
+    # tf.train.init_from_checkpoint(
+    #     options.checkpoint_path,
+    #     assignment_map={"/": "FirstStageFeatureExtractor/"})
+    # tf.train.init_from_checkpoint(
+    #     options.checkpoint_path,
+    #     assignment_map={"/": "SecondStageFeatureExtractor/"})
 
     return proposal_features, _init_from_classification_ckpt_fn
 
@@ -125,5 +147,16 @@ def FastRCNN(inputs, proposals, options, is_training=True):
 
     def _init_from_detection_ckpt_fn(_, sess):
       saver.restore(sess, options.checkpoint_path)
+
+    # tf.train.init_from_checkpoint(options.checkpoint_path,
+    #                               assignment_map={
+    #                                   "FirstStageFeatureExtractor/":
+    #                                       "FirstStageFeatureExtractor/"
+    #                               })
+    # tf.train.init_from_checkpoint(options.checkpoint_path,
+    #                               assignment_map={
+    #                                   "SecondStageFeatureExtractor/":
+    #                                       "SecondStageFeatureExtractor/"
+    #                               })
 
     return proposal_features, _init_from_detection_ckpt_fn

@@ -148,6 +148,26 @@ def masked_avg_nd(data, mask, dim=1):
   return masked_avgs
 
 
+def masked_max_nd(data, mask, dim=1):
+  """Computes the axis wise max over chosen elements.
+
+  Args:
+    data: 3-D float `Tensor` of size [n, m, d].
+    mask: 2-D boolean `Tensor` of size [n, m].
+    dim: The dimension over which to compute the avg.
+
+  Returns:
+    masked_max: N-D `Tensor`.
+      The maximized dimension is of size 1 after the operation.
+  """
+  axis_minimums = tf.reduce_min(data, dim, keepdims=True)
+  masked_maximums = tf.reduce_max(tf.multiply(data - axis_minimums,
+                                              tf.expand_dims(mask, -1)),
+                                  dim,
+                                  keepdims=True) + axis_minimums
+  return masked_maximums
+
+
 def masked_softmax(data, mask, dim=-1):
   """Computes the axis wise softmax over chosen elements.
 

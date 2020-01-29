@@ -56,15 +56,17 @@ def build_hyperparams(options, is_training):
   if options.op == hyperparams_pb2.Hyperparams.FC:
     affected_ops = [slim.fully_connected]
 
-  with (slim.arg_scope([slim.batch_norm], **batch_norm_params)
-        if batch_norm_params is not None else IdentityContextManager()):
-    with slim.arg_scope(
-        affected_ops,
-        weights_regularizer=_build_slim_regularizer(options.regularizer),
-        weights_initializer=_build_initializer(options.initializer),
-        activation_fn=_build_activation_fn(options.activation),
-        normalizer_fn=batch_norm) as sc:
-      return sc
+  def scope_fn():
+    with (slim.arg_scope([slim.batch_norm], **batch_norm_params)
+          if batch_norm_params is not None else IdentityContextManager()):
+      with slim.arg_scope(
+          affected_ops,
+          weights_regularizer=_build_slim_regularizer(options.regularizer),
+          weights_initializer=_build_initializer(options.initializer),
+          activation_fn=_build_activation_fn(options.activation),
+          normalizer_fn=batch_norm) as sc:
+        return sc
+  return scope_fn
 
 
 def _build_activation_fn(activation_fn):

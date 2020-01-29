@@ -14,6 +14,18 @@ from readers import reader
 from protos import pipeline_pb2
 
 
+def _summarize_variables(var_list):
+  """Summarizes variables.
+
+  Args:
+    var_list: A list of variables.
+  """
+  for var in var_list:
+    if 'global_step' not in var.op.name:
+      var_norm = tf.norm(var)
+      tf.summary.scalar('summarize_vars/' + var.op.name, var_norm)
+
+
 def _create_model_fn(pipeline_proto, is_chief=True):
   """Creates a callable that build the model.
 
@@ -51,10 +63,11 @@ def _create_model_fn(pipeline_proto, is_chief=True):
     for name, loss in losses.items():
       tf.compat.v1.summary.scalar('metrics/' + name, loss)
       tf.losses.add_loss(loss)
-    for loss in tf.losses.get_regularization_losses():
+    for loss in tf.compat.v1.losses.get_regularization_losses():
       tf.summary.scalar(
-          "loss/regularization/" + '/'.join(loss.op.name.split('/')[:2]), loss)
-    total_loss = tf.losses.get_total_loss(add_regularization_losses=True)
+          "regularization/" + '/'.join(loss.op.name.split('/')[:2]), loss)
+    total_loss = tf.compat.v1.losses.get_total_loss(
+        add_regularization_losses=True)
 
     # Get variables_to_train.
     variables_to_train = model.get_variables_to_train()
@@ -64,6 +77,7 @@ def _create_model_fn(pipeline_proto, is_chief=True):
     eval_metric_ops = None
 
     if tf.estimator.ModeKeys.TRAIN == mode:
+      _summarize_variables(tf.compat.v1.global_variables())
       global_step = tf.compat.v1.train.get_global_step()
 
       # Set learning rate.
@@ -150,3 +164,41 @@ def train_and_evaluate(pipeline_proto, model_dir):
                                      model_dir=model_dir,
                                      config=run_config)
   tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
+
+
+def predict(pipeline_proto, model_dir=None, yield_single_examples=True):
+  """Generates inference results.
+
+  Args:
+    pipeline_proto: A pipeline_pb2.Pipeline proto.
+    model_dir: Path to the directory saving model checkpoints.
+    yield_single_examples: If true, yield a single example.
+
+  Yields:
+    example: inference results.
+  """
+  if not isinstance(pipeline_proto, pipeline_pb2.Pipeline):
+    raise ValueError('pipeline_proto has to be an instance of Pipeline.')
+
+  predict_input_fn = reader.get_input_fn(pipeline_proto.eval_reader,
+                                         is_training=False)
+
+  # Create estimator.
+
+  model_fn = _create_model_fn(pipeline_proto)
+
+  run_config = tf.estimator.RunConfig(session_config=tf.ConfigProto(
+      gpu_options=tf.GPUOptions(allow_growth=True)))
+
+  estimator = tf.estimator.Estimator(model_fn=model_fn,
+                                     model_dir=modir_dir,
+                                     config=run_config)
+
+  # Predict results.
+
+  checkpoint_path = tf.train.latest_checkpoint(model_dir)
+  assert checkpoint_path is not None
+  for example in estimator.predict(input_fn=predict_input_fn,
+                                   checkpoint_path=checkpoint_path,
+                                   yield_single_examples=yield_single_examples):
+    yield example
