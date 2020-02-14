@@ -93,8 +93,8 @@ class VCRBertNextSentence(ModelBase):
     Returns:
       loss_dict: A dictionary of loss tensors keyed by names.
     """
-    losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        labels=inputs[InputFields.answer_label],
+    losses = tf.nn.sigmoid_cross_entropy_with_logits(
+        labels=tf.one_hot(inputs[InputFields.answer_label], depth=NUM_CHOICES),
         logits=predictions[FIELD_ANSWER_PREDICTION])
     return {'crossentropy': tf.reduce_mean(losses)}
 
