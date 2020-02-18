@@ -313,9 +313,9 @@ message VCRR2CFrozen {
 }
 
 
-message VCRR2CFrozenSimple {
+message SlowFast {
   extend Model {
-    optional VCRR2CFrozenSimple ext = 1018;
+    optional SlowFast ext = 1018;
   }
 
   // RNN config.
@@ -334,4 +334,62 @@ message VCRR2CFrozenSimple {
   optional int32 max_num_objects = 10 [default = 10];
 
   optional float dropout_keep_prob = 11 [default = 0.7];
+
+  optional bool use_cls_token_embedding = 12 [default = false];
+
+  optional bool use_max_pooling = 13 [default = false];
+
+  optional bool tag_semantic_model = 15 [default = false];
+}
+
+message VCRB2T2Frozen {
+  extend Model {
+    optional VCRB2T2Frozen ext = 1019;
+  }
+
+  // Path to the bert config file.
+  optional string bert_config_file = 1;
+
+  // Path to the bert vocabulary file.
+  optional string bert_vocab_file = 2;
+
+  // Path to the pre-trained bert checkpoint.
+  optional string bert_checkpoint_file = 3;
+
+  // Out-of-Vocabulary token id.
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  optional Hyperparams fc_hyperparams = 8;
+
+  repeated string frozen_variable_patterns = 6;
+
+  optional int32 max_num_objects = 10 [default = 10];
+
+  optional int32 visual_feature_dims = 11 [default = 512];
+
+  optional float dropout_keep_prob = 12 [default = 0.7];
+}
+
+message VCRBertNextSentenceAdversarial {
+  extend Model {
+    optional VCRBertNextSentenceAdversarial ext = 1032;
+  }
+
+  // Path to the bert config file.
+  optional string bert_config_file = 1;
+
+  // Path to the bert vocabulary file.
+  optional string bert_vocab_file = 2;
+
+  // Path to the pre-trained bert checkpoint.
+  optional string bert_checkpoint_file = 3;
+
+  // Out-of-Vocabulary token id.
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  // If true, fine-tune all bert layers.
+  optional bool bert_finetune_all = 5 [default = false];
+
+  // Bert layers to be fine-tuned, if `bert_finetune_all` is not set.
+  repeated string bert_finetune_layers = 6;
 }

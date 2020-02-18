@@ -20,16 +20,20 @@ from bert.modeling import BertModel
 from bert.modeling import get_assignment_map_from_checkpoint
 
 FIELD_ANSWER_PREDICTION = 'answer_prediction'
+FIELD_ATTENTION_DIST = 'attention_dist'
+MAX_BERT_LAYERS = 24
 
 
-class VCRBertNextSentence(ModelBase):
+class VCRBertNextSentenceAdversarial(ModelBase):
   """Wraps the BiLSTM layer to solve the VCR task."""
 
   def __init__(self, model_proto, is_training):
-    super(VCRBertNextSentence, self).__init__(model_proto, is_training)
+    super(VCRBertNextSentenceAdversarial,
+          self).__init__(model_proto, is_training)
 
-    if not isinstance(model_proto, model_pb2.VCRBertNextSentence):
-      raise ValueError('Options has to be an VCRBertNextSentence proto.')
+    if not isinstance(model_proto, model_pb2.VCRBertNextSentenceAdversarial):
+      raise ValueError(
+          'Options has to be an VCRBertNextSentenceAdversarial proto.')
 
   def predict(self, inputs, **kwargs):
     """Predicts the resulting tensors.
@@ -80,8 +84,26 @@ class VCRBertNextSentence(ModelBase):
     tf.compat.v1.train.init_from_checkpoint(options.bert_checkpoint_file,
                                             assignment_map)
 
+    # Adversarial training.
+    attention_outputs = []
+    for layer_id in range(MAX_BERT_LAYERS):
+      tensor_name = 'bert/encoder/layer_%i/attention/self/Softmax:0' % layer_id
+      attention_output = None
+      try:
+        attention_output = tf.get_default_graph().get_tensor_by_name(
+            tensor_name)
+        attention_outputs.append(attention_output)
+      except KeyError:
+        logging.warn('Tensor %s doex not exist.', tensor_name)
+
+    attention_outputs = tf.stack(attention_outputs, axis=0)
+    attention_outputs = tf.reshape(
+        tf.reduce_mean(attention_outputs, axis=[0, 2, 3]),
+        [batch_size, NUM_CHOICES, -1])
+
     return {
         FIELD_ANSWER_PREDICTION: output,
+        FIELD_ATTENTION_DIST: attention_outputs,
     }
 
   def build_losses(self, inputs, predictions, **kwargs):

@@ -6,11 +6,13 @@ from protos import model_pb2
 from vcr.r2c_frozen import VCRR2CFrozen
 from vcr.b2t2_frozen import VCRB2T2Frozen
 from vcr.bert_next_sentence import VCRBertNextSentence
+from vcr.bert_next_sentence_adversarial import VCRBertNextSentenceAdversarial
 
 MODELS = {
     model_pb2.VCRR2CFrozen.ext: VCRR2CFrozen,
     model_pb2.VCRB2T2Frozen.ext: VCRB2T2Frozen,
     model_pb2.VCRBertNextSentence.ext: VCRBertNextSentence,
+    model_pb2.VCRBertNextSentenceAdversarial.ext: VCRBertNextSentenceAdversarial,
 }
 
 

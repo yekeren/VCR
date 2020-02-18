@@ -166,7 +166,7 @@ def train_and_evaluate(pipeline_proto, model_dir):
   tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
 
 
-def predict(pipeline_proto, model_dir=None, yield_single_examples=True):
+def predict(pipeline_proto, model_dir=None, yield_single_examples=False):
   """Generates inference results.
 
   Args:
@@ -191,7 +191,7 @@ def predict(pipeline_proto, model_dir=None, yield_single_examples=True):
       gpu_options=tf.GPUOptions(allow_growth=True)))
 
   estimator = tf.estimator.Estimator(model_fn=model_fn,
-                                     model_dir=modir_dir,
+                                     model_dir=model_dir,
                                      config=run_config)
 
   # Predict results.

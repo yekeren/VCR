@@ -133,31 +133,31 @@ num_train_shards=10
 ######################################################
 # Tf record file without jpeg data - 2stage
 ######################################################
-for ((i=0;i<${num_val_shards};i+=1)); do
-  python "dataset-tools/create_vcr_tfrecord.py" \
-    --noencode_jpeg \
-    --noonly_use_relevant_dets \
-    --annotations_jsonl_file="data/vcr1annots/val.jsonl" \
-    --num_shards="${num_val_shards}" \
-    --shard_id="$i" \
-    --bert_feature_dir="output/bert-ft/cased_L-12_H-768_A-12" \
-    --frcnn_feature_dir="output/fast_rcnn/inception_resnet_v2_imagenet_2stages" \
-    --output_tfrecord_path="/own_files/yekeren/VCR-2stages-allboxes/val.record" \
-    > "log/val_${i}.log" 2>&1 &
-done
-
-for ((i=0;i<${num_train_shards};i+=1)); do
-  python "dataset-tools/create_vcr_tfrecord.py" \
-    --noencode_jpeg \
-    --noonly_use_relevant_dets \
-    --annotations_jsonl_file="data/vcr1annots/train.jsonl" \
-    --num_shards="${num_train_shards}" \
-    --shard_id="$i" \
-    --bert_feature_dir="output/bert-ft/cased_L-12_H-768_A-12" \
-    --frcnn_feature_dir="output/fast_rcnn/inception_resnet_v2_imagenet_2stages" \
-    --output_tfrecord_path="/own_files/yekeren/VCR-2stages-allboxes/train.record" \
-    > "log/train_${i}.log" 2>&1 &
-done
+# for ((i=0;i<${num_val_shards};i+=1)); do
+#   python "dataset-tools/create_vcr_tfrecord.py" \
+#     --noencode_jpeg \
+#     --noonly_use_relevant_dets \
+#     --annotations_jsonl_file="data/vcr1annots/val.jsonl" \
+#     --num_shards="${num_val_shards}" \
+#     --shard_id="$i" \
+#     --bert_feature_dir="output/bert-ft/cased_L-12_H-768_A-12" \
+#     --frcnn_feature_dir="output/fast_rcnn/inception_resnet_v2_imagenet_2stages" \
+#     --output_tfrecord_path="/own_files/yekeren/VCR-2stages-allboxes/val.record" \
+#     > "log/val_${i}.log" 2>&1 &
+# done
+# 
+# for ((i=0;i<${num_train_shards};i+=1)); do
+#   python "dataset-tools/create_vcr_tfrecord.py" \
+#     --noencode_jpeg \
+#     --noonly_use_relevant_dets \
+#     --annotations_jsonl_file="data/vcr1annots/train.jsonl" \
+#     --num_shards="${num_train_shards}" \
+#     --shard_id="$i" \
+#     --bert_feature_dir="output/bert-ft/cased_L-12_H-768_A-12" \
+#     --frcnn_feature_dir="output/fast_rcnn/inception_resnet_v2_imagenet_2stages" \
+#     --output_tfrecord_path="/own_files/yekeren/VCR-2stages-allboxes/train.record" \
+#     > "log/train_${i}.log" 2>&1 &
+# done
 
 ######################################################
 # Tf record file with jpeg data
@@ -230,3 +230,43 @@ done
 #     --output_tfrecord_path="/own_files/yekeren/VCR-text_and_image/train.record" \
 #     > "log/train_${i}.log" 2>&1 &
 # done
+
+# ######################################################
+# # Tf record file with text annotations and fast rcnn features.
+# ######################################################
+# for ((i=0;i<${num_val_shards};i+=1)); do
+#   python "dataset-tools/create_vcr_text_frcnn_tfrecord.py" \
+#     --noonly_use_relevant_dets \
+#     --annotations_jsonl_file="data/vcr1annots/val.jsonl" \
+#     --num_shards="${num_val_shards}" \
+#     --shard_id="$i" \
+#     --frcnn_feature_dir="output/fast_rcnn/inception_resnet_v2_imagenet_2stages" \
+#     --output_tfrecord_path="/own_files/yekeren/VCR-text_and_frcnn/val.record" \
+#     > "log/val_${i}.log" 2>&1 &
+# done
+# 
+# for ((i=0;i<${num_train_shards};i+=1)); do
+#   python "dataset-tools/create_vcr_text_frcnn_tfrecord.py" \
+#     --noonly_use_relevant_dets \
+#     --annotations_jsonl_file="data/vcr1annots/train.jsonl" \
+#     --num_shards="${num_train_shards}" \
+#     --shard_id="$i" \
+#     --frcnn_feature_dir="output/fast_rcnn/inception_resnet_v2_imagenet_2stages" \
+#     --output_tfrecord_path="/own_files/yekeren/VCR-text_and_frcnn/train.record" \
+#     > "log/train_${i}.log" 2>&1 &
+# done
+
+# ######################################################
+# # Adversarial training. Tf record file with text annotations and fast rcnn features.
+# ######################################################
+for ((i=0;i<${num_train_shards};i+=1)); do
+  python "dataset-tools/create_vcr_text_frcnn_tfrecord.py" \
+    --noonly_use_relevant_dets \
+    --annotations_jsonl_file="data/vcr1annots/train.jsonl" \
+    --num_shards="${num_train_shards}" \
+    --shard_id="$i" \
+    --adversarial_annotations_jsonl_file="data/adv_train.jsonl" \
+    --frcnn_feature_dir="output/fast_rcnn/inception_resnet_v2_imagenet_2stages" \
+    --output_tfrecord_path="/own_files/yekeren/VCR-adv-text_and_frcnn/train.record" \
+    > "log/train_${i}.log" 2>&1 &
+done
