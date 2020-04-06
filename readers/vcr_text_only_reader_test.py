@@ -20,10 +20,10 @@ class VCRTextOnlyReaderTest(tf.test.TestCase):
   def test_get_input_fn(self):
     options_str = r"""
       vcr_text_only_reader {
-        input_pattern: "output/val.record-*-of-00005"
+        input_pattern: "output/uncased/VCR-text_only/val.record-*-of-00005"
         shuffle_buffer_size: 10
         interleave_cycle_length: 1
-        batch_size: 20
+        batch_size: 3
         prefetch_buffer_size: 8000
       }
     """

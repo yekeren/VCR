@@ -8,54 +8,8 @@ import tensorflow as tf
 
 from tf_slim import tfexample_decoder
 from protos import reader_pb2
-
-PAD = '[PAD]'
-NUM_CHOICES = 4
-
-
-class TFExampleFields(object):
-  """Fields in the tf.train.Example."""
-  img_id = 'img_id'
-  annot_id = 'annot_id'
-  answer_label = 'answer_label'
-
-  img_bbox_label = "image/object/bbox/label"
-  img_bbox_score = "image/object/bbox/score"
-  img_bbox_feature = "image/object/bbox/feature"
-  img_bbox_scope = "image/object/bbox/"
-  img_bbox_field_keys = ['ymin', 'xmin', 'ymax', 'xmax']
-
-  question = 'question'
-  question_tag = 'question_tag'
-
-  answer_choice = 'answer_choice'
-  answer_choice_tag = 'answer_choice_tag'
-
-
-class InputFields(object):
-  """Names of the input tensors."""
-  # Meta information.
-  img_id = 'img_id'
-  annot_id = 'annot_id'
-  answer_label = 'answer_label'
-
-  # Objects.
-  num_objects = 'num_objects'
-  object_bboxes = 'object_bboxes'
-  object_labels = 'object_labels'
-  object_scores = 'object_scores'
-  object_features = 'object_features'
-
-  # Question and answer choices.
-  question = 'question'
-  question_tag = 'question_tag'
-  question_len = 'question_len'
-  answer_choices = 'answer_choices'
-  answer_choices_tag = 'answer_choices_tag'
-  answer_choices_len = 'answer_choices_len'
-  answer_choices_with_question = 'answer_choices_with_question'
-  answer_choices_with_question_tag = 'answer_choices_with_question_tag'
-  answer_choices_with_question_len = 'answer_choices_with_question_len'
+from readers.vcr_fields import *
+# from modeling.utils import knowledge_utils
 
 
 def _pad_sequences(sequences, pad=PAD):
@@ -77,7 +31,7 @@ def _pad_sequences(sequences, pad=PAD):
              mode='CONSTANT',
              constant_values=pad) for i, x in enumerate(sequences)
   ])
-  return padded_sequences, lengths
+  return padded_sequences, tf.stack(lengths)
 
 
 def _update_decoded_example(decoded_example, options):
@@ -130,6 +84,51 @@ def _update_decoded_example(decoded_example, options):
   answer_choices_with_question_tag, _ = _pad_sequences(
       answer_choices_with_question_tag_list, -1)
 
+  answer_len = answer_choices_len[decoded_example[InputFields.answer_label]]
+  answer = answer_choices[decoded_example[
+      InputFields.answer_label]][:answer_len]
+  answer_tag = answer_choices_tag[decoded_example[
+      InputFields.answer_label]][:answer_len]
+
+  # Rationale choices and lengths.
+  rationale_choices_list = [
+      decoded_example.pop(TFExampleFields.rationale_choice + '_%i' % i)
+      for i in range(1, 1 + NUM_CHOICES)
+  ]
+  rationale_choices_with_question_list = [
+      tf.concat(
+          [['[CLS]'], question, ['[SEP]'], answer, ['[SEP]'], x, ['[SEP]']], 0)
+      for x in rationale_choices_list
+  ]
+  (rationale_choices,
+   rationale_choices_len) = _pad_sequences(rationale_choices_list)
+  (rationale_choices_with_question, rationale_choices_with_question_len
+  ) = _pad_sequences(rationale_choices_with_question_list)
+
+  # Rationale tags.
+  rationale_choices_tag_list = [
+      decoded_example.pop(TFExampleFields.rationale_choice_tag + '_%i' % i)
+      for i in range(1, 1 + NUM_CHOICES)
+  ]
+  rationale_choices_with_question_tag_list = [
+      tf.concat([[-1], question_tag, [-1], answer_tag, [-1], x, [-1]], 0)
+      for x in rationale_choices_tag_list
+  ]
+  rationale_choices_tag, _ = _pad_sequences(rationale_choices_tag_list, -1)
+  rationale_choices_with_question_tag, _ = _pad_sequences(
+      rationale_choices_with_question_tag_list, -1)
+
+  # # Knowledge.
+  # knowledge_table = knowledge_utils.KnowledgeTable(
+  #     'output/word_to_definition.csv',
+  #     key_index=0,
+  #     value_index=2,
+  #     default_value=PAD)
+
+  # (answer_choices_with_question_wordnet,
+  #  answer_choices_with_question_wordnet_len
+  # ) = knowledge_table.query(answer_choices_with_question)
+
   decoded_example.update({
       InputFields.num_objects:
           num_objects,
@@ -151,6 +150,22 @@ def _update_decoded_example(decoded_example, options):
           answer_choices_with_question_tag,
       InputFields.answer_choices_with_question_len:
           answer_choices_with_question_len,
+      InputFields.rationale_choices:
+          rationale_choices,
+      InputFields.rationale_choices_tag:
+          rationale_choices_tag,
+      InputFields.rationale_choices_len:
+          rationale_choices_len,
+      InputFields.rationale_choices_with_question:
+          rationale_choices_with_question,
+      InputFields.rationale_choices_with_question_tag:
+          rationale_choices_with_question_tag,
+      InputFields.rationale_choices_with_question_len:
+          rationale_choices_with_question_len,
+      # InputFields.answer_choices_with_question_wordnet:
+      #     answer_choices_with_question_wordnet,
+      # InputFields.answer_choices_with_question_wordnet_len:
+      #     answer_choices_with_question_wordnet_len,
   })
   return decoded_example
 
@@ -170,6 +185,7 @@ def _parse_single_example(example, options):
       TFExampleFields.img_id: tf.io.FixedLenFeature([], tf.string),
       TFExampleFields.annot_id: tf.io.FixedLenFeature([], tf.string),
       TFExampleFields.answer_label: tf.io.FixedLenFeature([], tf.int64),
+      TFExampleFields.rationale_label: tf.io.FixedLenFeature([], tf.int64),
       TFExampleFields.img_bbox_label: tf.io.VarLenFeature(tf.string),
       TFExampleFields.img_bbox_score: tf.io.VarLenFeature(tf.float32),
       TFExampleFields.img_bbox_feature: tf.io.VarLenFeature(tf.float32),
@@ -185,6 +201,10 @@ def _parse_single_example(example, options):
             tf.io.VarLenFeature(tf.string),
         TFExampleFields.answer_choice_tag + '_%i' % i:
             tf.io.VarLenFeature(tf.int64),
+        TFExampleFields.rationale_choice + '_%i' % i:
+            tf.io.VarLenFeature(tf.string),
+        TFExampleFields.rationale_choice_tag + '_%i' % i:
+            tf.io.VarLenFeature(tf.int64),
     })
 
   # Initialize `items_to_handlers`.
@@ -197,6 +217,9 @@ def _parse_single_example(example, options):
                                    default_value=''),
       InputFields.answer_label:
           tfexample_decoder.Tensor(tensor_key=TFExampleFields.answer_label,
+                                   default_value=-1),
+      InputFields.rationale_label:
+          tfexample_decoder.Tensor(tensor_key=TFExampleFields.rationale_label,
                                    default_value=-1),
       InputFields.object_bboxes:
           tfexample_decoder.BoundingBox(
@@ -223,7 +246,16 @@ def _parse_single_example(example, options):
     tensor_key = TFExampleFields.answer_choice + '_%i' % i
     items_to_handlers[tensor_key] = tfexample_decoder.Tensor(
         tensor_key=tensor_key, default_value=PAD)
+
     tensor_key = TFExampleFields.answer_choice_tag + '_%i' % i
+    items_to_handlers[tensor_key] = tfexample_decoder.Tensor(
+        tensor_key=tensor_key, default_value=-1)
+
+    tensor_key = TFExampleFields.rationale_choice + '_%i' % i
+    items_to_handlers[tensor_key] = tfexample_decoder.Tensor(
+        tensor_key=tensor_key, default_value=PAD)
+
+    tensor_key = TFExampleFields.rationale_choice_tag + '_%i' % i
     items_to_handlers[tensor_key] = tfexample_decoder.Tensor(
         tensor_key=tensor_key, default_value=-1)
 
@@ -278,6 +310,7 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
       InputFields.img_id: [],
       InputFields.annot_id: [],
       InputFields.answer_label: [],
+      InputFields.rationale_label: [],
       InputFields.num_objects: [],
       InputFields.object_bboxes: [None, 4],
       InputFields.object_labels: [None],
@@ -292,11 +325,22 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
       InputFields.answer_choices_with_question: [NUM_CHOICES, None],
       InputFields.answer_choices_with_question_tag: [NUM_CHOICES, None],
       InputFields.answer_choices_with_question_len: [NUM_CHOICES],
+      InputFields.rationale_choices: [NUM_CHOICES, None],
+      InputFields.rationale_choices_tag: [NUM_CHOICES, None],
+      InputFields.rationale_choices_len: [NUM_CHOICES],
+      InputFields.rationale_choices_with_question: [NUM_CHOICES, None],
+      InputFields.rationale_choices_with_question_tag: [NUM_CHOICES, None],
+      InputFields.rationale_choices_with_question_len: [NUM_CHOICES],
+      # InputFields.answer_choices_with_question_wordnet: [
+      #     NUM_CHOICES, None, None
+      # ],
+      # InputFields.answer_choices_with_question_wordnet_len: [NUM_CHOICES, None],
   }
   padding_values = {
       InputFields.img_id: '',
       InputFields.annot_id: '',
       InputFields.answer_label: -1,
+      InputFields.rationale_label: -1,
       InputFields.num_objects: 0,
       InputFields.object_bboxes: 0.0,
       InputFields.object_labels: '',
@@ -311,6 +355,14 @@ def _create_dataset(options, is_training, input_pipeline_context=None):
       InputFields.answer_choices_with_question: PAD,
       InputFields.answer_choices_with_question_tag: -1,
       InputFields.answer_choices_with_question_len: 0,
+      InputFields.rationale_choices: PAD,
+      InputFields.rationale_choices_tag: -1,
+      InputFields.rationale_choices_len: 0,
+      InputFields.rationale_choices_with_question: PAD,
+      InputFields.rationale_choices_with_question_tag: -1,
+      InputFields.rationale_choices_with_question_len: 0,
+      # InputFields.answer_choices_with_question_wordnet: PAD,
+      # InputFields.answer_choices_with_question_wordnet_len: 0,
   }
   dataset = dataset.padded_batch(batch_size,
                                  padded_shapes=padded_shapes,

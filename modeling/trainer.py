@@ -88,7 +88,6 @@ def _create_model_fn(pipeline_proto, is_chief=True):
       tf.compat.v1.summary.scalar('metrics/learning_rate', learning_rate)
 
       # Use optimizer to minimize loss.
-
       def transform_grads_fn(grads):
         if train_config.HasField('max_gradient_norm'):
           grads = tf.contrib.training.clip_gradient_norms(
