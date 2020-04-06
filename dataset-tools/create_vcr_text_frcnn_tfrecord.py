@@ -3,7 +3,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import copy
 import json
 
 from absl import app
@@ -29,10 +28,6 @@ flags.DEFINE_boolean('do_lower_case', False,
 flags.DEFINE_string('annotations_jsonl_file', 'data/vcr1annots/val.jsonl',
                     'Path to the annotations file in jsonl format.')
 
-flags.DEFINE_string(
-    'adversarial_annotations_jsonl_file', None,
-    'Path to the adversarial annotations file in jsonl format.')
-
 flags.DEFINE_integer('num_shards', 10,
                      'Number of shards of the output tfrecord files.')
 
@@ -41,15 +36,15 @@ flags.DEFINE_integer('shard_id', 0, 'Shard id of the current process.')
 flags.DEFINE_string('output_tfrecord_path', 'output/val.record',
                     'Path to the output tfrecord files.')
 
-flags.DEFINE_string('image_zip_file', '/own_files/yekeren/vcr1images.zip',
+flags.DEFINE_string('image_zip_file', 'data/vcr1images.zip',
                     'Path to the zip file of images.')
+
+flags.DEFINE_boolean('only_use_relevant_dets', False,
+                     'If true, only use relevant detections.')
 
 flags.DEFINE_string('frcnn_feature_dir',
                     'output/fast_rcnn/inception_resnet_v2_imagenet',
                     'Path to the directory saving FRCNN features.')
-
-flags.DEFINE_boolean('only_use_relevant_dets', False,
-                     'If true, only use relevant detections.')
 
 FLAGS = flags.FLAGS
 
@@ -149,23 +144,16 @@ def get_detections_to_use(obj_to_type, tokens_mixed_with_tags):
   return detections_to_use, old_det_to_new_ind
 
 
-def _trim_answer(sentence):
-  for i, w in enumerate(sentence):
-    if w == '[SEP]': break
-  return sentence[i + 1: -1]
-
-
-def _create_tf_example(annot, adv_annot, meta, image_and_rcnn_features,
-                       bert_tokenizer, do_lower_case, only_use_relevant_dets):
+def _create_tf_example(annot, meta, bert_tokenizer, do_lower_case,
+                       image_and_rcnn_features, only_use_relevant_dets):
   """Creates an example from the annotation.
 
   Args:
-    encoded_jpg: A python string, the encoded jpeg data.
     annot: A python dictionary parsed from the json object.
     meta: A python dictionary containing object information.
-    image_and_rcnn_features: A numpy array containing box features.
     bert_tokenizer: A tokenization.FullTokenizer object.
     do_lower_case: If true, convert text to lower case.
+    image_and_rcnn_features: A numpy array containing box features.
 
   Returns:
     tf_example: A tf.train.Example proto.
@@ -199,7 +187,8 @@ def _create_tf_example(annot, adv_annot, meta, image_and_rcnn_features,
   obj_to_type = annot['objects']
   question = annot['question']
   answer_choices = annot['answer_choices']
-  assert NUM_CHOICES == len(answer_choices)
+  rationale_choices = annot['rationale_choices']
+  assert NUM_CHOICES == len(answer_choices) == len(rationale_choices)
 
   obj_to_type = np.array(obj_to_type)
   boxes = np.array(meta['boxes'])
@@ -208,7 +197,7 @@ def _create_tf_example(annot, adv_annot, meta, image_and_rcnn_features,
   old_det_to_new_ind = None
   if only_use_relevant_dets:
     detections_to_use, old_det_to_new_ind = get_detections_to_use(
-        obj_to_type, [question] + answer_choices)
+        obj_to_type, [question] + answer_choices + rationale_choices)
     old_det_to_new_ind = [-1 if x < 0 else x + 1 for x in old_det_to_new_ind]
 
     # Gather elements using the new indices.
@@ -253,56 +242,28 @@ def _create_tf_example(annot, adv_annot, meta, image_and_rcnn_features,
   feature['question'] = _bytes_feature_list(question_tokens)
   feature['question_tag'] = _int64_feature_list(question_tags)
 
-  if adv_annot is None:
-    for idx, tokenized_sent in enumerate(answer_choices):
-      # Encode answer choices.
-      tokens, tags = _fix_tokenization(tokenized_sent, obj_to_type,
-                                       old_det_to_new_ind, bert_tokenizer,
-                                       do_lower_case)
-      feature['answer_choice_%i' % (idx + 1)] = _bytes_feature_list(tokens)
-      feature['answer_choice_tag_%i' % (idx + 1)] = _int64_feature_list(tags)
-    return [tf.train.Example(features=tf.train.Features(feature=feature))]
+  # Encode answer choices.
+  for idx, tokenized_sent in enumerate(answer_choices):
+    tokens, tags = _fix_tokenization(tokenized_sent, obj_to_type,
+                                     old_det_to_new_ind, bert_tokenizer,
+                                     do_lower_case)
+    feature['answer_choice_%i' % (idx + 1)] = _bytes_feature_list(tokens)
+    feature['answer_choice_tag_%i' % (idx + 1)] = _int64_feature_list(tags)
 
-  else:
-    feature_toward_0 = copy.deepcopy(feature)
-    feature_toward_1 = copy.deepcopy(feature)
+  # Encode ratinale choices.
+  for idx, tokenized_sent in enumerate(rationale_choices):
+    tokens, tags = _fix_tokenization(tokenized_sent, obj_to_type,
+                                     old_det_to_new_ind, bert_tokenizer,
+                                     do_lower_case)
+    feature['rationale_choice_%i' % (idx + 1)] = _bytes_feature_list(tokens)
+    feature['rationale_choice_tag_%i' % (idx + 1)] = _int64_feature_list(tags)
 
-    for idx, tokenized_sent in enumerate(answer_choices):
-      # Encode answer choices.
-      tokens, tags = _fix_tokenization(tokenized_sent, obj_to_type,
-                                       old_det_to_new_ind, bert_tokenizer,
-                                       do_lower_case)
-      feature['answer_choice_tag_%i' % (idx + 1)] = _int64_feature_list(tags)
-      feature_toward_0['answer_choice_tag_%i' %
-                       (idx + 1)] = _int64_feature_list(tags)
-      feature_toward_1['answer_choice_tag_%i' %
-                       (idx + 1)] = _int64_feature_list(tags)
-
-      feature['answer_choice_%i' % (idx + 1)] = _bytes_feature_list(tokens)
-      feature_toward_0['answer_choice_%i' % (idx + 1)] = _bytes_feature_list(
-          _trim_answer(adv_annot['answer_choices_0'][idx]))
-      feature_toward_1['answer_choice_%i' % (idx + 1)] = _bytes_feature_list(
-          _trim_answer(adv_annot['answer_choices_1'][idx]))
-
-    tf_examples = [
-        tf.train.Example(features=tf.train.Features(feature=feature)),
-        tf.train.Example(features=tf.train.Features(feature=feature_toward_0)),
-        tf.train.Example(features=tf.train.Features(feature=feature_toward_1))
-    ]
-    return tf_examples
+  tf_example = tf.train.Example(features=tf.train.Features(feature=feature))
+  return tf_example
 
 
 def main(_):
   logging.set_verbosity(logging.INFO)
-
-  adv_annots = {}
-  if FLAGS.adversarial_annotations_jsonl_file is not None:
-    with open(FLAGS.adversarial_annotations_jsonl_file, 'r') as f:
-      for i, line in enumerate(f):
-        data = json.loads(line)
-        adv_annots[data['annot_id']] = data
-        if i % 1000 == 0:
-          logging.info('Adversarial annotation loaded %i.', i)
 
   # Create Bert model.
   bert_tokenizer = tokenization.FullTokenizer(vocab_file=FLAGS.bert_vocab_file,
@@ -322,8 +283,6 @@ def main(_):
     for idx, annot in enumerate(annots):
       if (idx + 1) % 1000 == 0:
         logging.info('On example %i/%i.', idx + 1, len(annots))
-
-      adv_annot = adv_annots.get(annot['annot_id'], None)
 
       annot_id = int(annot['annot_id'].split('-')[-1])
       if annot_id % num_shards != shard_id:
@@ -353,11 +312,10 @@ def main(_):
         raise ValueError('!!!!!!!!!!')
 
       # Create TF example.
-      tf_examples = _create_tf_example(annot, adv_annot, meta, rcnn_features,
-                                       bert_tokenizer, FLAGS.do_lower_case,
-                                       FLAGS.only_use_relevant_dets)
-      for tf_example in tf_examples:
-        writer.write(tf_example.SerializeToString())
+      tf_example = _create_tf_example(annot, meta, bert_tokenizer,
+                                      FLAGS.do_lower_case, rcnn_features,
+                                      FLAGS.only_use_relevant_dets)
+      writer.write(tf_example.SerializeToString())
 
   writer.close()
 
