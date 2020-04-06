@@ -201,28 +201,27 @@ message R2CBert{
   optional Hyperparams hyperparams = 8;
 }
 
-message VCRBertNextSentence {
+message VCRBiLSTMNextSentence {
   extend Model {
-    optional VCRBertNextSentence ext = 1012;
+    optional VCRBiLSTMNextSentence ext = 1032;
   }
 
-  // Path to the bert config file.
-  optional string bert_config_file = 1;
-
-  // Path to the bert vocabulary file.
-  optional string bert_vocab_file = 2;
-
-  // Path to the pre-trained bert checkpoint.
-  optional string bert_checkpoint_file = 3;
+  // Path to the vocabulary file.
+  optional string vocab_file = 2;
 
   // Out-of-Vocabulary token id.
-  optional uint32 bert_unk_token_id = 4 [default = 100];
+  optional uint32 unk_token_id = 4 [default = 100];
 
-  // If true, fine-tune all bert layers.
-  optional bool bert_finetune_all = 5 [default = false];
+  // Path to the glove embedding.
+  optional string glove_file = 5;
 
-  // Bert layers to be fine-tuned, if `bert_finetune_all` is not set.
-  repeated string bert_finetune_layers = 6;
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  // Hyper paramameters.
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional float dropout_keep_prob = 9 [default = 1.0];
 }
 
 message R2CVilBert{
@@ -370,9 +369,183 @@ message VCRB2T2Frozen {
   optional float dropout_keep_prob = 12 [default = 0.7];
 }
 
-message VCRBertNextSentenceAdversarial {
+message VCRCompatibleQA{
   extend Model {
-    optional VCRBertNextSentenceAdversarial ext = 1032;
+    optional VCRCompatibleQA ext = 1072;
+  }
+
+  // Path to the vocabulary file.
+  optional string vocab_file = 2;
+
+  // Out-of-Vocabulary token id.
+  optional uint32 unk_token_id = 4 [default = 100];
+
+  // Path to the glove embedding.
+  optional string glove_file = 5;
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  // Hyper paramameters.
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional float dropout_keep_prob = 9 [default = 1.0];
+}
+message VCRR2CGloVe {
+  extend Model {
+    optional VCRR2CGloVe ext = 1207;
+  }
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  optional int32 visual_feature_dims = 3 [default = 512];
+
+  optional string label_file = 5;
+
+  optional int32 label_vocab_size = 6 [default = 80];
+
+  optional int32 label_embedding_dims = 7 [default = 300];
+
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional int32 max_num_objects = 10 [default = 10];
+
+  optional float dropout_keep_prob = 11 [default = 0.7];
+
+  optional bool use_max_pooling = 13 [default = false];
+
+  optional string embedding_vocab_file = 14;
+
+  optional int32 embedding_unk_token_id = 15 [default = 100];
+
+  optional string embedding_glove_file = 16;
+}
+
+message VCRR2CGloVeAdv {
+  extend Model {
+    optional VCRR2CGloVeAdv ext = 1203;
+  }
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  optional int32 visual_feature_dims = 3 [default = 512];
+
+  optional string label_file = 5;
+
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional int32 max_num_objects = 10 [default = 10];
+
+  optional float dropout_keep_prob = 11 [default = 0.7];
+
+  optional bool use_max_pooling = 13 [default = false];
+
+  optional string embedding_vocab_file = 14;
+
+  optional int32 embedding_unk_token_id = 15 [default = 100];
+
+  optional string embedding_glove_file = 16;
+
+  optional float loss_weight_origin = 17 [default = 1.0];
+
+  optional float loss_weight_adv_r2c = 18 [default = 0.0];
+
+  optional float loss_weight_adv_mask = 19 [default = 0.0];
+
+  optional float temperature_init_value = 20 [default = 1.0];
+
+  optional bool temperature_trainable = 21 [default = false];
+
+  optional float temperature_regularizer = 22 [default = 0.0];
+}
+
+message VCRR2CGloVeAdv2 {
+  extend Model {
+    optional VCRR2CGloVeAdv2 ext = 1204;
+  }
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  optional int32 visual_feature_dims = 3 [default = 512];
+
+  optional string label_file = 5;
+
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional int32 max_num_objects = 10 [default = 10];
+
+  optional float dropout_keep_prob = 11 [default = 0.7];
+
+  optional bool use_max_pooling = 13 [default = false];
+
+  optional string embedding_vocab_file = 14;
+
+  optional int32 embedding_unk_token_id = 15 [default = 100];
+
+  optional string embedding_glove_file = 16;
+
+  optional float loss_weight_origin = 17 [default = 1.0];
+
+  optional float loss_weight_adv_r2c = 18 [default = 0.0];
+
+  optional float loss_weight_adv_mask = 19 [default = 0.0];
+
+  optional float temperature_init_value = 20 [default = 1.0];
+
+  optional bool temperature_trainable = 21 [default = false];
+
+  optional float temperature_regularizer = 22 [default = 0.0];
+}
+
+message VCRR2CBertAdv {
+  extend Model {
+    optional VCRR2CBertAdv ext = 1209;
+  }
+
+  // RNN config.
+  optional RNN rnn_config = 1;
+
+  optional int32 visual_feature_dims = 3 [default = 512];
+
+  optional string label_file = 5;
+
+  optional Hyperparams fc_hyperparams = 8;
+
+  optional int32 max_num_objects = 10 [default = 10];
+
+  optional float dropout_keep_prob = 11 [default = 0.7];
+
+  optional bool use_max_pooling = 13 [default = false];
+
+  optional string embedding_vocab_file = 14;
+
+  optional int32 embedding_unk_token_id = 15 [default = 100];
+
+  optional string embedding_glove_file = 16;
+
+  optional float loss_weight_origin = 17 [default = 1.0];
+
+  optional float loss_weight_adv_r2c = 18 [default = 0.0];
+
+  optional float loss_weight_adv_mask = 19 [default = 0.0];
+
+  optional float temperature_init_value = 20 [default = 1.0];
+
+  optional bool temperature_trainable = 21 [default = false];
+
+  optional float temperature_regularizer = 22 [default = 0.0];
+
+  optional bool use_sigmoid = 23 [default = false];
+
+  optional bool inherit_from_slim_arg_scope =24 [default = false];
+}
+
+message BertTextOnly {
+  extend Model {
+    optional BertTextOnly ext = 1012;
   }
 
   // Path to the bert config file.
@@ -387,9 +560,138 @@ message VCRBertNextSentenceAdversarial {
   // Out-of-Vocabulary token id.
   optional uint32 bert_unk_token_id = 4 [default = 100];
 
-  // If true, fine-tune all bert layers.
-  optional bool bert_finetune_all = 5 [default = false];
+  // If true, train rationale prediction model.
+  optional bool rationale_model = 11 [default = false];
 
-  // Bert layers to be fine-tuned, if `bert_finetune_all` is not set.
-  repeated string bert_finetune_layers = 6;
+  // If true, use sigmoid crossentropy loss.
+  optional bool use_sigmoid = 12 [default = false];
+
+  // Frozen variable patterns.
+  repeated string frozen_variable_patterns = 13;
+
+  // Hyperparameters of the fully-connected layers.
+  optional Hyperparams fc_hyperparams = 14;
+
+  // Keep probability of all dropout layers.
+  optional float dropout_keep_prob = 15 [default = 1.0];
 }
+
+message BertTextOnlyKb {
+  extend Model {
+    optional BertTextOnlyKb ext = 1042;
+  }
+
+  // Path to the bert config file.
+  optional string bert_config_file = 1;
+
+  // Path to the bert vocabulary file.
+  optional string bert_vocab_file = 2;
+
+  // Path to the pre-trained bert checkpoint.
+  optional string bert_checkpoint_file = 3;
+
+  // Out-of-Vocabulary token id.
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  // If true, train rationale prediction model.
+  optional bool rationale_model = 11 [default = false];
+
+  // If true, use sigmoid crossentropy loss.
+  optional bool use_sigmoid = 12 [default = false];
+
+  // Frozen variable patterns.
+  repeated string frozen_variable_patterns = 13;
+
+  // Hyperparameters of the fully-connected layers.
+  optional Hyperparams fc_hyperparams = 14;
+
+  // Keep probability of all dropout layers.
+  optional float dropout_keep_prob = 15 [default = 1.0];
+
+  // Path to the file maintaining the word-to-definition relation.
+  optional string word_to_definition_file = 18;
+
+  // GloVe file.
+  optional string glove_file = 19;
+}
+
+message BertB2T2 {
+  extend Model {
+    optional BertB2T2 ext = 1059;
+  }
+
+  // Path to the bert config file.
+  optional string bert_config_file = 1;
+
+  // Path to the bert vocabulary file.
+  optional string bert_vocab_file = 2;
+
+  // Path to the pre-trained bert checkpoint.
+  optional string bert_checkpoint_file = 3;
+
+  // Out-of-Vocabulary token id.
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  // If true, train rationale prediction model.
+  optional bool rationale_model = 11 [default = false];
+
+  // If true, use sigmoid crossentropy loss.
+  optional bool use_sigmoid = 12 [default = false];
+
+  // Frozen variable patterns.
+  repeated string frozen_variable_patterns = 13;
+
+  // Hyperparameters of the fully-connected layers.
+  optional Hyperparams fc_hyperparams = 14;
+
+  // Keep probability of all dropout layers.
+  optional float dropout_keep_prob = 15 [default = 1.0];
+
+
+  // Maximum number of objects to be used in the model.
+  optional int32 max_num_objects = 16 [default = 10];
+}
+
+message BertB2T2Kb {
+  extend Model {
+    optional BertB2T2Kb ext = 1054;
+  }
+
+  // Path to the bert config file.
+  optional string bert_config_file = 1;
+
+  // Path to the bert vocabulary file.
+  optional string bert_vocab_file = 2;
+
+  // Path to the pre-trained bert checkpoint.
+  optional string bert_checkpoint_file = 3;
+
+  // Out-of-Vocabulary token id.
+  optional uint32 bert_unk_token_id = 4 [default = 100];
+
+  // If true, train rationale prediction model.
+  optional bool rationale_model = 11 [default = false];
+
+  // If true, use sigmoid crossentropy loss.
+  optional bool use_sigmoid = 12 [default = false];
+
+  // Frozen variable patterns.
+  repeated string frozen_variable_patterns = 13;
+
+  // Hyperparameters of the fully-connected layers.
+  optional Hyperparams fc_hyperparams = 14;
+
+  // Keep probability of all dropout layers.
+  optional float dropout_keep_prob = 15 [default = 1.0];
+
+
+  // Maximum number of objects to be used in the model.
+  optional int32 max_num_objects = 16 [default = 10];
+
+  // Path to the file maintaining the word-to-definition relation.
+  optional string word_to_definition_file = 18;
+
+  // GloVe file.
+  optional string glove_file = 19;
+}
+
