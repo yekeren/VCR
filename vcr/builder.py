@@ -15,6 +15,7 @@ from vcr.bilstm_next_sentence import VCRBiLSTMNextSentence
 from vcr.bert_text_only import BertTextOnly
 from vcr.bert_b2t2 import BertB2T2
 from vcr.bert_b2t2_kb import BertB2T2Kb
+from vcr.finetune_cc import FinetuneCC
 
 MODELS = {
     #     model_pb2.VCRR2CFrozen.ext: VCRR2CFrozen,
@@ -35,6 +36,8 @@ MODELS = {
     model_pb2.BertB2T2Kb.ext:
         BertB2T2Kb,
     #    model_pb2.VCRCompatibleQA.ext: VCRCompatibleQA,
+    model_pb2.FinetuneCC.ext:
+        FinetuneCC,
 }
 
 

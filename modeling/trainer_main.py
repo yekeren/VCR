@@ -36,10 +36,10 @@ def _load_pipeline_proto(filename):
 
 
 def main(_):
-  logging.set_verbosity(logging.INFO)
+  logging.set_verbosity(logging.DEBUG)
 
-  # for gpu in tf.config.experimental.list_physical_devices('GPU'):
-  #   tf.config.experimental.set_memory_growth(gpu, True)
+  for gpu in tf.config.experimental.list_physical_devices('GPU'):
+    tf.config.experimental.set_memory_growth(gpu, True)
 
   tf.io.gfile.makedirs(FLAGS.model_dir)
   tf.io.gfile.copy(FLAGS.pipeline_proto,
