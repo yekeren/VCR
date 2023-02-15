@@ -22,6 +22,6 @@ tensorflow==1.15.0
 tensorflow-estimator==1.15.1
 termcolor==1.1.0
 tf-slim==1.0
-Werkzeug==0.16.0
+Werkzeug==2.2.3
 wrapt==1.11.2
 yapf==0.29.0
